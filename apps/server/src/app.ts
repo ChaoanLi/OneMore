@@ -1,0 +1,207 @@
+import { Hono, type Context } from 'hono'
+import { cors } from 'hono/cors'
+import { ZodError } from 'zod'
+import { aiDraftRequestSchema, GAME_CATALOG, type User } from '@couju/core'
+import type { Ctx } from './services/context'
+import type { Store } from './store'
+import { AppError, MemoryRateLimiter } from './util'
+import * as users from './services/users'
+import * as social from './services/social'
+import * as events from './services/events'
+import * as interests from './services/interests'
+import * as notifications from './services/notify'
+import { draftFromText, providerFromEnv, type DraftProvider } from './ai/providers'
+import * as calendar from './services/calendar'
+import * as email from './services/email'
+import { Mailer, transportFromEnv } from './services/mailer'
+
+const APP_NAME = '算我一个 · OneMore'
+
+type Env = { Variables: { user: User | undefined } }
+
+export interface AppDeps {
+  store: Store
+  now?: () => Date
+  ai?: DraftProvider
+  mailer?: Mailer
+}
+
+export function createApp(deps: AppDeps) {
+  const now = deps.now ?? (() => new Date())
+  const baseUrl = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 8787}`).replace(/\/$/, '')
+  const ctx: Ctx = { store: deps.store, now, mailer: deps.mailer ?? new Mailer(deps.store, transportFromEnv(), now, baseUrl) }
+  const ai = deps.ai ?? providerFromEnv()
+  const signupLimiter = new MemoryRateLimiter(30, 3600_000)
+  const restoreLimiter = new MemoryRateLimiter(5, 15 * 60_000)
+  const aiLimiter = new MemoryRateLimiter(10, 60_000)
+
+  const app = new Hono<Env>()
+
+  // Bearer token，不使用 Cookie，因此允许跨域（方便本地调试与小程序）
+  app.use('/api/*', cors())
+
+  app.use('/api/*', async (c, next) => {
+    const auth = c.req.header('Authorization')
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined
+    c.set('user', users.userFromToken(ctx, token))
+    await next()
+  })
+
+  const me = (c: Context<Env>): User => {
+    const u = c.get('user')
+    if (!u) throw new AppError(401, 'unauthorized', '请先告诉我们怎么称呼你')
+    return u
+  }
+  const body = async (c: Context<Env>) => {
+    try {
+      return await c.req.json()
+    } catch {
+      return {}
+    }
+  }
+  const ip = (c: Context<Env>) => c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
+
+  app.onError((err, c) => {
+    if (err instanceof AppError) return c.json({ error: err.code, message: err.message }, err.status)
+    if (err instanceof ZodError) {
+      const issue = err.issues[0]
+      return c.json({ error: 'invalid_input', message: issue?.message ?? '输入有误', path: issue?.path }, 400)
+    }
+    console.error(err)
+    return c.json({ error: 'internal', message: '服务器开小差了，请稍后再试' }, 500)
+  })
+
+  app.get('/api/health', (c) => c.json({ ok: true, ai: ai.name, time: ctx.now().toISOString() }))
+  app.get('/api/games', (c) => c.json({ games: GAME_CATALOG }))
+
+  // ---------- 身份 ----------
+  app.post('/api/auth/guest', async (c) => {
+    if (!signupLimiter.check(ip(c))) throw new AppError(429, 'rate_limited', '操作太频繁，请稍后再试')
+    return c.json(users.signupGuest(ctx, await body(c)))
+  })
+  app.post('/api/auth/restore', async (c) => {
+    if (!restoreLimiter.check(ip(c))) throw new AppError(429, 'rate_limited', '尝试次数太多，请 15 分钟后再试')
+    return c.json(users.restoreWithCode(ctx, await body(c)))
+  })
+  app.post('/api/auth/wechat', () => {
+    throw new AppError(501, 'not_implemented', '微信登录尚未接入（需要小程序 AppID 与后端 code2Session）')
+  })
+  app.get('/api/me', (c) => c.json({ user: me(c), unread: ctx.store.unreadCount(me(c).id) }))
+  app.patch('/api/me', async (c) => c.json({ user: users.updateMe(ctx, me(c), await body(c)) }))
+  app.post('/api/me/recovery-code', (c) => c.json(users.bindRecoveryCode(ctx, me(c))))
+  app.get('/api/users/:handle', (c) => c.json({ user: users.publicProfile(ctx, c.req.param('handle')) }))
+
+  // ---------- 好友与圈子 ----------
+  app.get('/api/friends', (c) => c.json(social.listFriends(ctx, me(c))))
+  app.post('/api/friends', async (c) => c.json(social.requestFriend(ctx, me(c), await body(c))))
+  app.post('/api/friends/:id/accept', (c) => {
+    social.acceptFriend(ctx, me(c), c.req.param('id'))
+    return c.json({ ok: true })
+  })
+  app.patch('/api/friends/:id', async (c) => {
+    social.setFavorite(ctx, me(c), c.req.param('id'), await body(c))
+    return c.json({ ok: true })
+  })
+  app.delete('/api/friends/:id', (c) => {
+    social.removeFriend(ctx, me(c), c.req.param('id'))
+    return c.json({ ok: true })
+  })
+  app.get('/api/circles', (c) => c.json({ circles: social.listCircles(ctx, me(c)) }))
+  app.post('/api/circles', async (c) => c.json({ circle: social.createCircle(ctx, me(c), await body(c)) }))
+  app.put('/api/circles/:id', async (c) => c.json({ circle: social.updateCircle(ctx, me(c), c.req.param('id'), await body(c)) }))
+  app.delete('/api/circles/:id', (c) => {
+    social.deleteCircle(ctx, me(c), c.req.param('id'))
+    return c.json({ ok: true })
+  })
+
+  // ---------- 活动 ----------
+  app.get('/api/events', (c) => c.json(events.listMyEvents(ctx, me(c))))
+  app.post('/api/events', async (c) => {
+    const e = events.createEvent(ctx, me(c), await body(c))
+    return c.json({ code: e.code })
+  })
+  // 查看活动不要求登录（持有链接即可预览）；tz 参数用于未登录时按设备时区显示
+  app.get('/api/events/:code', (c) =>
+    c.json(events.getEventView(ctx, c.req.param('code'), c.get('user'), c.req.query('tz') || undefined)),
+  )
+  const action = (fn: (c: Context<Env>, user: User, code: string, input: unknown) => unknown) => async (c: Context<Env>) => {
+    const user = me(c)
+    const code = c.req.param('code')!
+    const result = fn(c, user, code, await body(c))
+    return c.json({ ...(typeof result === 'object' && result ? result : {}), view: events.getEventView(ctx, code, user) })
+  }
+  app.put('/api/events/:code/response', action((_c, u, code, input) => events.respond(ctx, u, code, input)))
+  app.post('/api/events/:code/withdraw', action((_c, u, code) => events.withdraw(ctx, u, code)))
+  app.post('/api/events/:code/final-confirm', action((_c, u, code) => events.finalConfirm(ctx, u, code)))
+  app.post('/api/events/:code/confirm', action((_c, u, code, input) => events.confirmEvent(ctx, u, code, input)))
+  app.post('/api/events/:code/promote', action((_c, u, code, input) => events.promoteWaitlist(ctx, u, code, input)))
+  app.post('/api/events/:code/reopen', action((_c, u, code) => events.reopenEvent(ctx, u, code)))
+  app.post('/api/events/:code/cancel', action((_c, u, code, input) => events.cancelEvent(ctx, u, code, input)))
+  app.post('/api/events/:code/invite', action((_c, u, code, input) => events.inviteMore(ctx, u, code, input)))
+  app.post('/api/events/:code/slots', action((_c, u, code, input) => events.addSlots(ctx, u, code, input)))
+
+  // ---------- 我想玩 ----------
+  app.get('/api/interests', (c) => c.json(interests.listInterests(ctx, me(c))))
+  app.post('/api/interests', async (c) => c.json({ interest: interests.createInterest(ctx, me(c), await body(c)) }))
+  app.post('/api/interests/:id/join', (c) => c.json({ interest: interests.joinInterest(ctx, me(c), c.req.param('id')) }))
+  app.delete('/api/interests/:id/join', (c) => c.json({ interest: interests.leaveInterest(ctx, me(c), c.req.param('id')) }))
+  app.post('/api/interests/:id/withdraw', (c) => {
+    interests.withdrawInterest(ctx, me(c), c.req.param('id'))
+    return c.json({ ok: true })
+  })
+
+  // ---------- 邮件 ----------
+  app.get('/api/email/status', (c) => c.json({ transport: ctx.mailer?.transport.kind ?? 'console' }))
+  app.get('/api/me/email', (c) => c.json(email.emailSettings(ctx, me(c))))
+  app.post('/api/me/email', async (c) => c.json(email.requestEmail(ctx, me(c), await body(c))))
+  app.post('/api/me/email/verify', async (c) => c.json(email.verifyEmail(ctx, me(c), await body(c))))
+  app.patch('/api/me/email', async (c) => c.json(email.setEmailEnabled(ctx, me(c), await body(c))))
+  app.delete('/api/me/email', (c) => c.json(email.removeEmail(ctx, me(c))))
+  app.post('/api/events/:code/email-invite', async (c) => c.json(email.inviteByEmail(ctx, me(c), c.req.param('code'), await body(c))))
+  // 邮件里的一键退订：返回一个简单页面
+  app.get('/api/email/unsubscribe/:token', (c) => {
+    try {
+      const addr = email.unsubscribe(ctx, c.req.param('token'))
+      return c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:420px;margin:60px auto;padding:0 20px;color:#1f1f1f"><div style="color:#ff2b2b;font-weight:800">算我一个 · OneMore</div><h2>已退订</h2><p style="color:#6b6b6b">${addr.replace(/[<>&"]/g, '')} 之后不会再收到任何邮件。想重新接收，在 App 的“我”里重新验证邮箱即可。</p></body>`)
+    } catch {
+      return c.html('<!doctype html><meta charset="utf-8"><p>退订链接无效。</p>', 404)
+    }
+  })
+
+  // ---------- 日历 ----------
+  app.get('/api/calendar', (c) => c.json(calendar.calendarMonth(ctx, me(c), c.req.query('month'))))
+  app.get('/api/me/calendar-feed', (c) => c.json(calendar.feedStatus(ctx, me(c))))
+  app.post('/api/me/calendar-feed', (c) => c.json(calendar.rotateFeed(ctx, me(c))))
+  app.delete('/api/me/calendar-feed', (c) => c.json(calendar.disableFeed(ctx, me(c))))
+  // 日历应用订阅用：不能带请求头，所以令牌在链接里（只读、可随时重新生成作废）
+  app.get('/api/calendar/feed/:file', (c) => {
+    const token = c.req.param('file').replace(/\.ics$/, '')
+    const proto = c.req.header('x-forwarded-proto') ?? new URL(c.req.url).protocol.replace(':', '')
+    const host = c.req.header('x-forwarded-host') ?? c.req.header('host') ?? new URL(c.req.url).host
+    const baseUrl = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/$/, '')
+    const body = calendar.buildFeed(ctx, token, baseUrl, APP_NAME)
+    return c.body(body, 200, {
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': 'inline; filename="onemore.ics"',
+      'Cache-Control': 'no-cache',
+    })
+  })
+
+  // ---------- 通知 ----------
+  app.get('/api/notifications', (c) => c.json(notifications.listNotifications(ctx, me(c).id)))
+  app.post('/api/notifications/read', (c) => {
+    notifications.markAllRead(ctx, me(c).id)
+    return c.json({ ok: true })
+  })
+
+  // ---------- AI 草稿 ----------
+  app.get('/api/ai/status', (c) => c.json({ provider: ai.name }))
+  app.post('/api/ai/draft', async (c) => {
+    const user = me(c)
+    if (!aiLimiter.check(user.id)) throw new AppError(429, 'rate_limited', '说得太快啦，歇一会儿再试')
+    const { text } = aiDraftRequestSchema.parse(await body(c))
+    return c.json(await draftFromText(ai, text, { now: ctx.now(), timezone: user.timezone }))
+  })
+
+  return { app, ctx }
+}

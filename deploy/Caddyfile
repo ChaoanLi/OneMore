@@ -1,0 +1,5 @@
+# Caddy 会自动为 $DOMAIN 申请 Let's Encrypt 证书并自动续期
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8787
+}

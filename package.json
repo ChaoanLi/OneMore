@@ -1,0 +1,28 @@
+{
+  "name": "couju",
+  "version": "0.1.0",
+  "private": true,
+  "description": "算我一个：熟人轻社交组局 MVP（Taro H5 + Node API）",
+  "workspaces": [
+    "packages/core",
+    "apps/server",
+    "apps/client"
+  ],
+  "scripts": {
+    "build:core": "npm run build -w @couju/core",
+    "dev": "npm run build:core && concurrently -k -n api,h5 -c blue,magenta \"npm run dev -w @couju/server\" \"npm run dev:h5 -w @couju/client\"",
+    "build": "npm run build:core && npm run build:h5 -w @couju/client",
+    "start": "npm run build && npm run start -w @couju/server",
+    "seed": "npm run seed -w @couju/server",
+    "test": "npm run build:core && npm run test -w @couju/core && npm run test -w @couju/server",
+    "typecheck": "npm run build:core && npm run typecheck -w @couju/core && npm run typecheck -w @couju/server && npm run typecheck -w @couju/client"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
