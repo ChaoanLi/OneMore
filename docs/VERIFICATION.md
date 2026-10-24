@@ -48,7 +48,7 @@ no remaining Critical, Important or Minor issues.
 
 - No production DeepSeek request or real SMTP delivery verified. Default AI is a labelled keyword demo; email is a logged demo transport.
 - No public domain deployment, mainland China/US reachability measurements, WeChat device validation, or third-party calendar polling measurement.
-- Repository preparation remains private pending the user's explicit public-visibility decision. License is the unmodified official PolyForm Noncommercial 1.0.0; exact-text comparison passed. Lucide ISC and Feather MIT notices are retained separately.
+- The repository became public on 2026-10-23 after the user's explicit approval; GitHub's Public status was verified. License is the unmodified official PolyForm Noncommercial 1.0.0; exact-text comparison passed. Lucide ISC and Feather MIT notices are retained separately.
 - Credential-pattern and tracked-file/history checks are targeted checks, not a guarantee that every possible secret format is detectable. Databases, actual `.env`, private cloud notes, keys and temporary fixtures remain excluded.
 
 # 先前的独立空间验证（基线）
