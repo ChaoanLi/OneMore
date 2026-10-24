@@ -1192,8 +1192,7 @@ function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView
       <View className='sub mt4'>{t('已加入本空间的朋友登录后即可报名，时间会自动换成他们那边的。')}</View>
       <View className='share-text mt12'>
         {text}
-        {'\n'}
-        {url}
+        {isH5 ? `\n${url}` : ''}
       </View>
       {isH5 ? (
         <View className='row gap8 mt16'>

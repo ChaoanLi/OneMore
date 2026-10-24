@@ -9,12 +9,14 @@ import { APP_NAME } from '../../lib/brand'
 import { Avatar, Button, Card, Empty, SectionTitle } from '../../components/ui'
 import { del, get, patch, post } from '../../lib/api'
 import { bootSession, getSession, requireUser, useSession } from '../../lib/session'
-import { appUrl, confirm, copyText, go, toast, toastError } from '../../lib/ui'
+import { appUrl, confirm, copyText, go, isH5, toast, toastError } from '../../lib/ui'
+import { ShareButton, useShareFromButton } from '../../components/ShareButton'
 
 /** 好友与圈子。常玩标记和圈子都只有自己看得到。 */
 export default function Friends() {
   useLocale()
   const { user } = useSession()
+  useShareFromButton()
   const [data, setData] = useState<FriendsResponse | null>(null)
   const [circles, setCircles] = useState<CirclesResponse['circles']>([])
   const [handle, setHandle] = useState('')
@@ -115,16 +117,22 @@ export default function Friends() {
             <View className='sub'>{t('我的 ID：{0}', user.handle)}</View>
           </View>
         </View>
-        <Button
-          kind='primary'
-          block
-          className='mt12'
-          onClick={() =>
-            void copyText(t('在「{0}」加我好友：{1}', APP_NAME, appUrl(`/pages/friends/add?h=${user.handle}`)), t('复制好了，发给朋友吧'))
-          }
-        >
-          {t('复制我的加好友链接')}
-        </Button>
+        {isH5 ? (
+          <Button
+            kind='primary'
+            block
+            className='mt12'
+            onClick={() =>
+              void copyText(t('在「{0}」加我好友：{1}', APP_NAME, appUrl(`/pages/friends/add?h=${user.handle}`)), t('复制好了，发给朋友吧'))
+            }
+          >
+            {t('复制我的加好友链接')}
+          </Button>
+        ) : (
+          <ShareButton className='mt12' path={appUrl(`/pages/friends/add?h=${user.handle}`)} title={t('{0} 想加你为好友', user.nickname)}>
+            {t('发给微信好友加我')}
+          </ShareButton>
+        )}
         <View className='row gap8 mt12'>
           <Input
             className='input flex1'

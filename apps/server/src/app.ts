@@ -15,6 +15,7 @@ import { draftFromText, providerFromEnv, type DraftProvider } from './ai/provide
 import * as calendar from './services/calendar'
 import * as email from './services/email'
 import { Mailer, transportFromEnv } from './services/mailer'
+import { loginWithWechat, wechatFromEnv, type WechatAuth } from './services/wechat'
 
 const APP_NAME = '算我一个 · OneMore'
 
@@ -25,6 +26,8 @@ export interface AppDeps {
   now?: () => Date
   ai?: DraftProvider
   mailer?: Mailer
+  /** 小程序登录；不传时读环境变量，未配置则接口返回 501 */
+  wechat?: WechatAuth | null
 }
 
 export function createApp(deps: AppDeps) {
@@ -32,9 +35,11 @@ export function createApp(deps: AppDeps) {
   const baseUrl = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 8787}`).replace(/\/$/, '')
   const ctx: Ctx = { store: deps.store, now, mailer: deps.mailer ?? new Mailer(deps.store, transportFromEnv(), now, baseUrl) }
   const ai = deps.ai ?? providerFromEnv()
+  const wechat = deps.wechat === undefined ? wechatFromEnv() : (deps.wechat ?? undefined)
   const signupLimiter = new MemoryRateLimiter(30, 3600_000)
   const restoreLimiter = new MemoryRateLimiter(5, 15 * 60_000)
   const aiLimiter = new MemoryRateLimiter(10, 60_000)
+  const wechatLimiter = new MemoryRateLimiter(60, 15 * 60_000)
 
   const app = new Hono<Env>()
 
@@ -118,8 +123,10 @@ export function createApp(deps: AppDeps) {
     if (!restoreLimiter.check(ip(c))) throw new AppError(429, 'rate_limited', '尝试次数太多，请 15 分钟后再试')
     return c.json(users.restoreWithCode(scoped(c), await body(c)))
   })
-  app.post('/api/auth/wechat', () => {
-    throw new AppError(501, 'not_implemented', '微信登录尚未接入（需要小程序 AppID 与后端 code2Session）')
+  app.post('/api/auth/wechat', async (c) => {
+    if (!wechat) throw new AppError(501, 'not_implemented', '微信登录尚未接入（服务器没有配置小程序 AppID）')
+    if (!wechatLimiter.check(ip(c))) throw new AppError(429, 'rate_limited', '操作太频繁，请稍后再试')
+    return c.json(await loginWithWechat(scoped(c), wechat, c.get('user'), await body(c)))
   })
   app.get('/api/me', (c) => c.json({ user: me(c), spaces: ctx.store.listSpaces(me(c).id), unread: 0 }))
   app.patch('/api/me', async (c) => c.json({ user: users.updateMe(scoped(c), me(c), await body(c)) }))

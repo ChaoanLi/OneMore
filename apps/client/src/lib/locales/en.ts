@@ -595,4 +595,10 @@ export const clientEnglish: Record<string, string> = {
   '{0} ID：{1}\n恢复码：{2}': '{0} ID: {1}\nRecovery code: {2}',
   '【{0}】{1} 约你：{2}\n{3}{4}\n有空就来，没空不用回 👉':
     '[{0}] {1} invites you: {2}\n{3}{4}\nJoin if you can. No pressure if you can’t 👉',
+  '邀请你加入「{0}」': 'Join “{0}” on OneMore',
+  把邀请发到微信群: 'Send the invite to a WeChat group',
+  '朋友点开卡片就能直接加入。': 'Friends can join right from the card.',
+  '已更换，旧邀请已失效': 'Replaced. The old invite no longer works.',
+  '{0} 想加你为好友': '{0} wants to be friends',
+  发给微信好友加我: 'Send to a WeChat friend',
 }

@@ -12,6 +12,7 @@
     "build:core": "npm run build -w @couju/core",
     "dev": "npm run build:core && concurrently -k -n api,h5 -c blue,magenta \"npm run dev -w @couju/server\" \"npm run dev:h5 -w @couju/client\"",
     "build": "npm run build:core && npm run build:h5 -w @couju/client",
+    "build:weapp": "npm run build:core && npm run build:weapp:online -w @couju/client",
     "start": "npm run build && npm run start -w @couju/server",
     "seed": "npm run seed -w @couju/server",
     "test": "npm run build:core && npm run test -w @couju/core && npm run test -w @couju/server",

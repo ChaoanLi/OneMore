@@ -64,6 +64,38 @@ export function deviceTimezone(): string {
 
 let booting: Promise<void> | null = null
 
+// ---------- 微信小程序登录 ----------
+
+const isWeapp = process.env.TARO_ENV === 'weapp'
+
+type WechatLoginResult =
+  | { status: 'signed_in'; token: string; user: User }
+  | { status: 'bound'; user: User }
+  | { status: 'needs_profile' }
+
+/** wx.login 拿到一次性 code 交给服务端；拿不到或服务端没配置时返回 null，退回昵称/恢复码流程 */
+async function wechatLogin(extra: Record<string, unknown> = {}): Promise<WechatLoginResult | null> {
+  if (!isWeapp) return null
+  try {
+    const { code } = await Taro.login()
+    if (!code) return null
+    return await post<WechatLoginResult>('/api/auth/wechat', { code, ...extra })
+  } catch (e) {
+    // 501：服务器还没配置 AppID；409：微信已绑别的账号。都不打断现有流程
+    if (e instanceof ApiError && e.status !== 501 && e.status !== 409) console.warn('wechat login failed', e.code)
+    return null
+  }
+}
+
+/** 已登录账号绑定当前微信（每个账号在这台设备上只尝试一次） */
+async function bindWechatOnce(user: User) {
+  if (!isWeapp) return
+  const key = `onemore.wechat.${user.id}`
+  if (Taro.getStorageSync(key)) return
+  const r = await wechatLogin()
+  if (r) Taro.setStorageSync(key, '1')
+}
+
 export function bootSession(): Promise<void> {
   if (booting) return booting
   const initialSelection = getLocaleSelection().revision
@@ -71,6 +103,14 @@ export function bootSession(): Promise<void> {
     const token = Taro.getStorageSync(TOKEN_KEY) as string
     const cached = Taro.getStorageSync(USER_KEY) as string
     if (!token) {
+      // 小程序：这个微信绑定过账号就直接登录，不用再填昵称
+      const r = isWeapp ? await wechatLogin() : null
+      if (r?.status === 'signed_in') {
+        saveAuth(r)
+        Taro.setStorageSync(`onemore.wechat.${r.user.id}`, '1')
+        await refreshSpaces().catch(() => undefined)
+        return
+      }
       setState({ ready: true, user: null })
       return
     }
@@ -91,6 +131,7 @@ export function bootSession(): Promise<void> {
         if (me.user.locale && getLocaleSelection().revision === initialSelection) applyLocale(me.user.locale)
         applySpaces(me.spaces, me.user)
         setState({ ready: true, user: me.user, unread: 0 })
+        void bindWechatOnce(me.user)
         return
       } catch (e) {
         // 仅语言变化可重试；身份或空间替换后不得恢复旧会话。
@@ -126,8 +167,12 @@ function clearLocal() {
 export async function signupGuest(nickname: string, timezone = DEFAULT_TIMEZONE): Promise<User> {
   const initial = requestContext.capture()
   const selection = getLocaleSelection().revision
-  const res = await post<AuthResponse>('/api/auth/guest', { nickname, timezone, locale: getLocale() })
+  const profile = { nickname, timezone, locale: getLocale() }
+  // 小程序：新建账号时一起绑定微信；服务器没配置微信时退回普通访客注册
+  const viaWechat = isWeapp ? await wechatLogin({ profile }) : null
+  const res = viaWechat?.status === 'signed_in' ? viaWechat : await post<AuthResponse>('/api/auth/guest', profile)
   saveAuth(res)
+  if (viaWechat?.status === 'signed_in') Taro.setStorageSync(`onemore.wechat.${res.user.id}`, '1')
   const authenticated = requestContext.capture()
   await refreshSpaces()
   // The first signup resolves an anonymous choice to its new account. Replacing an
@@ -143,6 +188,8 @@ export async function restoreAccount(handle: string, recoveryCode: string): Prom
   setState({ switching: true })
   saveAuth(res)
   await refreshSpaces()
+  // 用恢复码找回 H5 上的老账号后，顺便绑定微信，下次打开小程序直接登录
+  await bindWechatOnce(res.user).catch(() => undefined)
   try {
     await Taro.reLaunch({ url: '/pages/me/index' })
   } finally {

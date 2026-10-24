@@ -39,6 +39,7 @@ export class Store extends LegacyStore {
       CREATE TABLE IF NOT EXISTS space_records (space_id TEXT NOT NULL REFERENCES spaces(id), kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(space_id,kind,id));
       CREATE INDEX IF NOT EXISTS space_records_kind ON space_records(space_id,kind);
       CREATE TABLE IF NOT EXISTS space_imports (source_key TEXT NOT NULL, space_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(source_key,space_id));
+      CREATE TABLE IF NOT EXISTS wechat_bindings (openid TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id), created_at TEXT NOT NULL);
     `)
     this.db.exec(
       "UPDATE space_members SET data=json_set(data,'$.generation',lower(hex(randomblob(16)))) WHERE json_extract(data,'$.generation') IS NULL",
@@ -46,6 +47,18 @@ export class Store extends LegacyStore {
     // 邀请链接原文，供成员随时复制（老数据库补列）
     const cols = this.db.prepare('PRAGMA table_info(spaces)').all() as { name: string }[]
     if (!cols.some((c) => c.name === 'invite_token')) this.db.exec('ALTER TABLE spaces ADD COLUMN invite_token TEXT')
+  }
+  /** 微信小程序 openid ↔ 账号，一对一 */
+  getUserIdByOpenid(openid: string): UserId | undefined {
+    const r = this.db.prepare('SELECT user_id FROM wechat_bindings WHERE openid=?').get(openid) as { user_id: string } | undefined
+    return r?.user_id
+  }
+  getOpenidByUserId(userId: UserId): string | undefined {
+    const r = this.db.prepare('SELECT openid FROM wechat_bindings WHERE user_id=?').get(userId) as { openid: string } | undefined
+    return r?.openid
+  }
+  bindOpenid(openid: string, userId: UserId, createdAt: string) {
+    this.db.prepare('INSERT INTO wechat_bindings(openid,user_id,created_at) VALUES(?,?,?)').run(openid, userId, createdAt)
   }
   forSpace(spaceId: string): Store {
     if (!this.getSpace(spaceId)) throw notFound('空间不存在')

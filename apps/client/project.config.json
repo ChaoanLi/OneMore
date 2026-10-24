@@ -2,7 +2,7 @@
   "miniprogramRoot": "./dist/weapp",
   "projectname": "couju",
   "description": "凑局",
-  "appid": "touristappid",
+  "appid": "wxd92d1c1ef1a6d9fe",
   "setting": {
     "urlCheck": true,
     "es6": false,

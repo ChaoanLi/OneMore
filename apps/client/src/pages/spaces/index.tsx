@@ -7,7 +7,8 @@ import { Page } from '../../components/Page'
 import { Avatar, Button, Card } from '../../components/ui'
 import { get, post, del } from '../../lib/api'
 import { bootSession, getSession, refreshSpaces, requireUser, selectSpace, useSession } from '../../lib/session'
-import { appUrl, confirm, copyText, toastError, toastOk } from '../../lib/ui'
+import { appUrl, confirm, copyText, isH5, toastError, toastOk } from '../../lib/ui'
+import { ShareButton, useShareFromButton } from '../../components/ShareButton'
 
 type Member = { userId: string; role: 'owner' | 'member'; user: PublicUser }
 type Request = SpaceJoinRequest & { user: PublicUser }
@@ -82,6 +83,7 @@ export default function Spaces() {
     setRequests(r.requests)
   }
   const ownerSpace = session.spaces.find((s) => s.id === manage)
+  useShareFromButton()
   return (
     <Page global>
       <View className='hero'>
@@ -102,7 +104,14 @@ export default function Spaces() {
               {t('进入')}
             </Button>
           </View>
-          {invites[s.id] ? (
+          {invites[s.id] && !isH5 ? (
+            <View className='mt12'>
+              <ShareButton path={invites[s.id]!} title={t('邀请你加入「{0}」', s.name)}>
+                {t('把邀请发到微信群')}
+              </ShareButton>
+              <View className='muted small mt4'>{t('朋友点开卡片就能直接加入。')}</View>
+            </View>
+          ) : invites[s.id] ? (
             <View className='mt12'>
               <View className='space-link' onClick={() => void copyText(appUrl(invites[s.id]!), t('复制好了，发给朋友吧'))}>
                 {appUrl(invites[s.id]!)}
@@ -241,7 +250,8 @@ export default function Spaces() {
                   return
                 const r = await post<{ path: string }>(`/api/spaces/${manage}/invite`)
                 setInvites((m) => ({ ...m, [manage]: r.path }))
-                await copyText(appUrl(r.path), t('新链接已复制，旧链接已失效'))
+                if (isH5) await copyText(appUrl(r.path), t('新链接已复制，旧链接已失效'))
+                else toastOk(t('已更换，旧邀请已失效'))
               })
             }
           >
