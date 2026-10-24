@@ -480,7 +480,11 @@ describe('日历', () => {
 
     const cal = await call<import('@couju/core').CalendarResponse>('GET', '/api/calendar?month=2026-10', people[0]!.token)
     expect(cal.data).toMatchObject({ month: '2026-10', today: '2026-10-23', timezone: SH })
-    expect(cal.data.items).toEqual([expect.objectContaining({ code, kind: 'confirmed', localDate: '2026-10-25', timeLabel: '09:00–11:30' })])
+    // 同组的公开局即使没邀请我、我也没回复，也会作为候选时间出现
+    expect(cal.data.items).toEqual([
+      expect.objectContaining({ code, kind: 'confirmed', localDate: '2026-10-25', timeLabel: '09:00–11:30' }),
+      expect.objectContaining({ code: data.code, kind: 'candidate', myAvailability: null, localDate: '2026-10-26' }),
+    ])
 
     const cal2 = await call<import('@couju/core').CalendarResponse>('GET', '/api/calendar?month=2026-10', other.token)
     expect(cal2.data.items).toEqual([expect.objectContaining({ code: data.code, kind: 'candidate', myAvailability: 'maybe', localDate: '2026-10-26' })])

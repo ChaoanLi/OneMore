@@ -188,9 +188,16 @@ export class Store extends LegacyStore {
   allEvents() {
     return this.records<GameEvent>('event')
   }
+  /** 空间里的公开局所有成员都能看到（含后入组的人）；“只让选中的人看到”的局只给发起人、受邀者和已回复的人 */
   override listEventsForUser(userId: string) {
     return this.allEvents()
-      .filter((e) => e.hostId === userId || e.invitations.some((i) => i.userId === userId) || !!this.getResponse(e.id, userId))
+      .filter(
+        (e) =>
+          e.visibility === 'link' ||
+          e.hostId === userId ||
+          e.invitations.some((i) => i.userId === userId) ||
+          !!this.getResponse(e.id, userId),
+      )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 100)
   }

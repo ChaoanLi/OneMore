@@ -158,6 +158,32 @@ describe('独立空间授权', () => {
     expect((await call('GET', `/api/events/${e.data.code}`, b.token, A)).status).toBe(200)
     expect((await call('POST', `/api/events/${e.data.code}/cancel`, a.token, B)).status).toBe(404)
   })
+  it('组里的公开局所有成员都能在列表和月历里看到，包括建局之后才入组的人', async () => {
+    const a = await guest('A'),
+      b = await guest('B'),
+      c = await guest('C')
+    const A = await space(a.token, 'A空间')
+    await join(a.token, b.token, A)
+    expect((await call('POST', '/api/friends', a.token, A, { handle: b.user.handle })).status).toBe(200)
+    expect((await call('POST', `/api/friends/${a.user.id}/accept`, b.token, A)).status).toBe(200)
+    const open = await call('POST', '/api/events', a.token, A, { ...eventBody, title: '全组可见' })
+    const secret = await call('POST', '/api/events', a.token, A, {
+      ...eventBody,
+      title: '只邀请B',
+      visibility: 'invited',
+      invite: { userIds: [b.user.id], circleIds: [] },
+    })
+    expect(open.status).toBe(200)
+    expect(secret.status).toBe(200)
+    // C 在两个局都建好之后才入组
+    await join(a.token, c.token, A)
+    const titles = async (token: string) => ((await call('GET', '/api/events', token, A)).data.active as { title: string }[]).map((e) => e.title)
+    expect(await titles(c.token)).toEqual(['全组可见'])
+    expect((await titles(b.token)).sort()).toEqual(['全组可见', '只邀请B'].sort())
+    const cal = JSON.stringify((await call('GET', '/api/calendar?month=2026-10', c.token, A)).data)
+    expect(cal).toContain('全组可见')
+    expect(cal).not.toContain('只邀请B')
+  })
   it('同一对人的好友、圈子、想玩和用户搜索按空间独立', async () => {
     const a = await guest('A'),
       b = await guest('B'),
