@@ -78,6 +78,7 @@ function toView(ctx: Ctx, interest: Interest, me: User): InterestView {
 
 export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
   const input = createInterestSchema.parse(raw)
+  if(input.audience.kind==='circles' && input.audience.circleIds.some(id=>ctx.store.getCircle(id)?.ownerId!==me.id)) throw badRequest('只能选择当前空间内自己的圈子')
   const game = findGame(input.gameKey)
   const name = game?.name ?? input.name
   if (!name) throw badRequest('想玩什么？')
@@ -105,7 +106,7 @@ export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
     ctx.store.saveInterest(interest)
     for (const uid of audienceIds(ctx, interest)) {
       notify(ctx, uid, {
-        kind: 'interest_new',
+        kind: 'interest_new', objectId: interest.id,
         title: `${me.nickname} 举手想玩 ${interest.emoji} ${interest.name}`,
         body: `${interest.whenHint ? `${interest.whenHint}，` : ''}想玩就 +1，不想玩当没看见`,
         link: '/pages/index/index',
@@ -152,7 +153,7 @@ export function joinInterest(ctx: Ctx, me: User, id: string): InterestView {
     if (!wasReady && interestReady(next)) {
       for (const uid of interestParticipants(next)) {
         notify(ctx, uid, {
-          kind: 'interest_ready',
+          kind: 'interest_ready', objectId: next.id,
           title: `${next.emoji} ${next.name} 人齐了（${interestHeadcount(next)} 个）`,
           body: '谁有空谁来定个时间，就能开了',
           link: '/pages/index/index',

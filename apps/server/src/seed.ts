@@ -11,11 +11,12 @@ import type { Ctx } from './services/context'
 import * as users from './services/users'
 import * as social from './services/social'
 import * as events from './services/events'
+import * as spaces from './services/spaces'
 import * as interests from './services/interests'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const store = new Store(process.env.DB_PATH || resolve(here, '../data/couju.db'))
-const ctx: Ctx = { store, now: () => new Date() }
+let ctx: Ctx = { store, now: () => new Date() }
 
 const people = [
   { handle: 'xiaolin', nickname: '小林', avatar: '🦊', timezone: 'America/Chicago', roles: [] as 'gm'[] },
@@ -26,7 +27,7 @@ const people = [
 ]
 
 if (store.getUserByHandle('xiaolin')) {
-  console.log('演示数据已存在（删除 apps/server/data/couju.db 可重置）。')
+  console.log('演示数据已存在（请使用新的 DB_PATH 创建独立演示数据库，不要删除已有数据）。')
   process.exit(0)
 }
 
@@ -43,6 +44,10 @@ const [lin, ajie, laowang, xiaoyu, kiki] = created.map((c) => c.user) as [
   (typeof created)[0]['user'],
   (typeof created)[0]['user'],
 ]
+
+const demoSpace=spaces.createSpace(ctx,lin,{name:'OneMore 演示空间'}).space
+for(const p of created.slice(1)) store.saveMembership({spaceId:demoSpace.id,userId:p.user.id,role:'member',joinedAt:ctx.now().toISOString(),emailEnabled:true})
+ctx={...ctx,store:store.forSpace(demoSpace.id)}
 
 // 小林和其他人都是好友；阿杰和老王也是好友
 for (const other of [ajie, laowang, xiaoyu, kiki]) {
@@ -88,5 +93,5 @@ console.log('\n演示数据已创建。用“我的 → 恢复账号”输入 ID
 for (const c of created) {
   console.log(`  ${c.user.avatar} ${c.user.nickname.padEnd(4)}  ID: ${c.user.handle.padEnd(8)}  恢复码: ${c.recoveryCode}  (${c.user.timezone})`)
 }
-console.log(`\n进行中的活动：/#/pages/event/detail?code=${ev.code}\n`)
+console.log(`\n进行中的活动：/#/pages/event/detail?code=${ev.code}&space=${demoSpace.id}\n`)
 store.close()

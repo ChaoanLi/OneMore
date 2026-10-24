@@ -1,6 +1,7 @@
 export default defineAppConfig({
   pages: [
     'pages/index/index',
+    'pages/spaces/index',
     'pages/event/detail',
     'pages/event/create',
     'pages/interest/create',

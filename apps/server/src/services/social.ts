@@ -42,7 +42,7 @@ export function listFriends(ctx: Ctx, me: User) {
 export function requestFriend(ctx: Ctx, me: User, raw: unknown): { status: 'pending' | 'accepted'; user: PublicUser } {
   const { handle } = friendRequestSchema.parse(raw)
   const target = ctx.store.getUserByHandle(handle)
-  if (!target) throw notFound('找不到这个 ID')
+  if (!target || !ctx.store.isMember(target.id)) throw notFound('找不到这个 ID')
   if (target.id === me.id) throw badRequest('不能加自己为好友')
   return ctx.store.tx(() => {
     const existing = ctx.store.getFriendship(me.id, target.id)
@@ -123,7 +123,9 @@ export function listCircles(ctx: Ctx, me: User) {
 
 function sanitizeMembers(ctx: Ctx, me: User, memberIds: UserId[]): UserId[] {
   const friends = new Set(ctx.store.friendIds(me.id))
-  return [...new Set(memberIds)].filter((id) => friends.has(id))
+  ctx.store.assertMembers(memberIds)
+  if(memberIds.some(id=>!friends.has(id))) throw badRequest('只能选择当前空间的好友')
+  return [...new Set(memberIds)]
 }
 
 export function createCircle(ctx: Ctx, me: User, raw: unknown): Circle {

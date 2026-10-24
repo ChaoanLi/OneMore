@@ -1,176 +1,47 @@
-# 部署到 chaoanli.com（含域名邮箱发提醒）
+# 自托管部署
 
-目标：朋友在手机上打开 `https://onemore.chaoanli.com` 就能用；提醒邮件从 `notify@chaoanli.com` 发出。
+目标网址可使用 `https://onemore.chaoanli.com`。当前尚未上线；服务器容量、DNS、HTTPS、真实 SMTP 与 DeepSeek 接入都需要各自验证。中美访问效果应在部署后分别测试。
 
-整个过程大约 30–60 分钟，分 6 步。不需要懂运维，照着复制命令即可。
+## 运行环境与配置
 
----
-
-## 第 0 步：先想好两件事
-
-1. **用哪个网址**：建议用子域名 `onemore.chaoanli.com`，主域名 `chaoanli.com` 留着以后做别的。下文都以它为例。
-2. **服务器放哪**：朋友大多在国内，建议选 **香港 / 东京 / 新加坡** 机房。
-   - ❌ 不要选中国大陆机房：大陆服务器绑定域名需要 ICP 备案，你人在美国、域名在海外注册，备案很难办。
-   - 香港/东京访问国内通常比较快，也不需要备案。
-
-## 第 1 步：买一台小服务器（每月几美元）
-
-任选一家，配置 **1 核 CPU、1–2 GB 内存、Ubuntu 24.04** 就够朋友圈用：
-
-- 腾讯云 轻量应用服务器（选“中国香港”）
-- 阿里云国际站 / 轻量应用服务器（选“中国香港”）
-- Vultr、DigitalOcean、Linode（选 Tokyo 或 Singapore）
-
-买好后记下两样东西：**服务器 IP 地址**（例如 `43.xxx.xxx.xxx`）和 **root 密码**（或 SSH 密钥）。
-
-防火墙/安全组里放行端口 **22、80、443**（很多云默认只开 22）。
-
-## 第 2 步：把域名指向服务器
-
-登录 Northwest 后台 → 找到 `chaoanli.com` 的 **DNS 设置** → 添加一条记录：
-
-| 类型 | 主机名（Host / Name） | 值（Value / Points to） | TTL |
-|---|---|---|---|
-| A | `onemore` | 你的服务器 IP | 默认 |
-
-⚠️ 不要动已有的 **MX** 记录，那是邮箱用的。
-
-生效一般几分钟到一小时。在电脑终端里检查：
+现有 Dockerfile 使用 Node 24，SQLite 数据必须持久化。复制 `.env.example` 为 `.env`，填写 `DOMAIN`、`PUBLIC_URL`；实际密码和 API Key 只存在本机环境文件中。
 
 ```bash
-ping onemore.chaoanli.com   # 显示的 IP 是你的服务器就对了
-```
-
-## 第 3 步：服务器上装 Docker
-
-在 Mac 终端里登录服务器（把 IP 换成你的）：
-
-```bash
-ssh root@你的服务器IP
-```
-
-登录后执行：
-
-```bash
-curl -fsSL https://get.docker.com | sh
-docker --version   # 能看到版本号就装好了
-```
-
-## 第 4 步：把代码传上去
-
-**在你自己的 Mac 上**（新开一个终端窗口），进入项目目录执行：
-
-```bash
-cd ~/Documents/OneMore
-rsync -av --exclude node_modules --exclude dist --exclude apps/server/data --exclude .env ./ root@你的服务器IP:/opt/onemore/
-```
-
-## 第 5 步：拿到邮箱的发信设置，写配置文件
-
-### 5.1 在 Northwest 后台找邮箱设置
-
-进入邮箱管理（Email / Business Email），先创建一个发信用的地址，比如 `notify@chaoanli.com`（用你那个免费名额即可，也可以直接用你自己的邮箱）。
-
-然后找 **“邮件客户端设置 / Mail client setup / IMAP & SMTP settings”** 之类的页面，记下这 4 项：
-
-| 需要的 | 长什么样 |
-|---|---|
-| SMTP 服务器 | 例如 `smtp.xxxx.com` 或 `mail.chaoanli.com` |
-| 端口 | 通常是 `465`（SSL）或 `587`（STARTTLS） |
-| 用户名 | 通常是完整邮箱 `notify@chaoanli.com` |
-| 密码 | 这个邮箱的密码（有的服务要求单独生成“应用密码”） |
-
-找不到的话，直接问 Northwest 客服：“I want to send email from my app via SMTP. What are the SMTP host, port and username for my mailbox?”
-
-### 5.2 防止进垃圾箱（很重要）
-
-在同一个 DNS 设置页，确认有这三类记录（邮箱设置页一般会给出具体值；没有的话问客服要）：
-
-- **SPF**：一条 TXT 记录，值以 `v=spf1` 开头
-- **DKIM**：一条 TXT（或 CNAME）记录，主机名里带 `_domainkey`
-- **DMARC**：主机名 `_dmarc`，值例如 `v=DMARC1; p=none`
-
-没有这些，QQ / 163 邮箱很可能把提醒当垃圾邮件。
-
-### 5.3 写 .env
-
-回到服务器的终端：
-
-```bash
-cd /opt/onemore
 cp .env.example .env
-nano .env
-```
+# 编辑 .env：DOMAIN=onemore.chaoanli.com
+# PUBLIC_URL=https://onemore.chaoanli.com
 
-填成这样（替换成你的真实值）：
-
-```bash
-DOMAIN=onemore.chaoanli.com
-PUBLIC_URL=https://onemore.chaoanli.com
-
-SMTP_HOST=第5.1步查到的服务器
-SMTP_PORT=465
-SMTP_USER=notify@chaoanli.com
-SMTP_PASS=邮箱密码
-MAIL_FROM=算我一个 <notify@chaoanli.com>
-# 如果端口是 587，再加一行：
-# SMTP_SECURE=false
-```
-
-`nano` 里按 `Ctrl+O` 回车保存，`Ctrl+X` 退出。
-
-## 第 6 步：启动
-
-```bash
-cd /opt/onemore
 docker compose up -d --build
+docker compose logs --tail 80 app caddy
 ```
 
-第一次会构建几分钟。完成后：
+域名对应的 DNS A 记录应指向实际服务器公网 IPv4；没有公网 IPv6 就不要增加 AAAA 记录。确认主机防火墙和云网络允许网站的 80/443 入站。SSH 仅向维护者开放。Caddy 自动签发 HTTPS 证书，签发需要正确 DNS 和可达的端口。
+
+Compose 使用 `NODE_ENV=production`。未配置 SMTP 时不会真实发邮件，生产 API 也不会返回演示验证码。发信需要填写 SMTP_HOST、SMTP_PORT、SMTP_USER、SMTP_PASS、MAIL_FROM，并按发信服务商要求配置域名验证；域名 DNS 管理与邮箱收信服务可以分开。
+
+DeepSeek 需要服务端配置 `DEEPSEEK_API_KEY`，客户端不能持有密钥。现有适配器尚需用真实账号验证可用模型、超时和费用；没有 Key 时仍使用明确标注的演示解析。
+
+## 首次使用
+
+打开网站创建账号和空间，在空间管理页生成加入链接。朋友申请后由管理员批准；活动链接不能代替空间加入链接。请绑定并保存账号恢复码，以便换设备后继续使用同一账号。
+
+不要在正式数据库运行演示 seed。需要演示时指定独立的 `DB_PATH`，例如本机的临时数据库。
+
+## 数据与更新
+
+SQLite 文件和自动升级备份位于 `appdata` 卷。旧模型数据默认保留但隔离，见 [迁移说明](LEGACY-MIGRATION.md)。没有空间字段的旧通知、邮件和日历令牌不再使用。
+
+备份运行中的 SQLite 必须通过 SQLite 备份机制或 `VACUUM INTO` 取得一致快照，不能只复制主 `.db` 文件而漏掉 WAL。下面命令在容器内生成快照，再复制到本机；请把备份目录设为仅维护者可读。
 
 ```bash
-docker compose logs -f app     # 看到“SMTP 已配置，会真的发出”和“API 已启动”就对了；Ctrl+C 退出查看
+docker compose exec app node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync('/data/couju.db'); db.exec(\"VACUUM INTO '/data/manual-backup.db'\"); db.close()"
+docker compose cp app:/data/manual-backup.db ./onemore-backup.db
 ```
 
-用手机打开 **https://onemore.chaoanli.com** 🎉（第一次打开时 Caddy 会自动申请 HTTPS 证书，可能要等几十秒）。
+目标快照文件必须尚不存在；为每次备份使用新名字，并及时保存到独立存储。备份包含私人数据和凭证，不能上传源码仓库。
 
-### 测试邮件
+更新前先备份，然后在服务器拉取已验证版本并执行 `docker compose up -d --build`。恢复时停止 app，恢复数据库并移开旧 WAL/SHM，再启动验证，不要在线覆盖。
 
-在网页里进入“我 → 邮件提醒”，填你自己的邮箱、收验证码。收到了就说明发信通了；没收到先看垃圾箱，再看日志：
+## 上线验证
 
-```bash
-docker compose logs app | grep 邮件
-```
-
----
-
-## 以后常用的操作
-
-**更新代码**（在 Mac 上改完后）：
-
-```bash
-# Mac 上
-rsync -av --exclude node_modules --exclude dist --exclude apps/server/data --exclude .env ./ root@你的服务器IP:/opt/onemore/
-# 服务器上
-cd /opt/onemore && docker compose up -d --build
-```
-
-**备份数据**（所有用户、活动都在一个 SQLite 文件里）：
-
-```bash
-docker compose cp app:/data/couju.db ./couju-backup-$(date +%F).db
-```
-
-**看日志 / 重启**：
-
-```bash
-docker compose logs -f app
-docker compose restart app
-```
-
-## 已知的现实问题
-
-- **微信里打开**：未备案域名在微信里打开，有时会先出现“非微信官方网页”的提示，点“继续访问”即可；如果链接被大量举报，可能被拦截。熟人之间使用一般没问题。
-- **免费域名邮箱的发信量**：通常每天有上限（几百封级别），朋友圈规模足够。
-- **日历订阅**：部署后在“日历”页重新生成订阅链接，手机日历才能访问到。
-- **手机日历 / 邮件里的链接**都依赖 `PUBLIC_URL`，务必填对。
+检查健康接口、HTTPS、同账号切换两空间、外空间活动拒绝访问、管理员批准与移除、日历令牌撤销。用中国大陆和美国的实际网络分别测试首页、API 和活动报名。真实 SMTP 和 DeepSeek 需另外验证；本地测试通过不代表外部服务已接通。

@@ -1,3 +1,4 @@
+import { requestContext } from './requestContext'
 import type { DraftSuggestion, InterestView } from '@couju/core'
 
 /**
@@ -9,13 +10,15 @@ export type CreatePrefill =
   | { source: 'interest'; interest: InterestView }
 
 let pending: CreatePrefill | null = null
+let context = requestContext.capture()
 
 export function setPrefill(p: CreatePrefill) {
   pending = p
+  context = requestContext.capture()
 }
 
 export function takePrefill(): CreatePrefill | null {
-  const p = pending
+  const p = requestContext.isCurrent(context) ? pending : null
   pending = null
   return p
 }

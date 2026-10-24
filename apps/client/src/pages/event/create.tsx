@@ -23,7 +23,7 @@ import { SlotEditor } from '../../components/SlotEditor'
 import { Button, Chip, SectionTitle, Sheet, Stepper } from '../../components/ui'
 import { get, post } from '../../lib/api'
 import { takePrefill } from '../../lib/draftStore'
-import { deviceTimezone, requireUser, useSession } from '../../lib/session'
+import { deviceTimezone, getSession, requireUser, useSession } from '../../lib/session'
 import { back, toast, toastError } from '../../lib/ui'
 
 /** 本局的一个玩法（从“我的游戏”选来，人数可以只对这一局调整） */
@@ -204,7 +204,7 @@ export default function CreateEvent() {
     setSubmitting(true)
     try {
       const { code } = await post<{ code: string }>('/api/events', payload)
-      void Taro.redirectTo({ url: `/pages/event/detail?code=${code}&created=1` })
+      void Taro.redirectTo({ url: `/pages/event/detail?code=${code}&created=1&space=${getSession().activeSpace}` })
     } catch (e) {
       toastError(e)
     } finally {

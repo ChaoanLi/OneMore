@@ -102,10 +102,12 @@ function slotTextFor(ctx: Ctx, userId: UserId, slot: TimeSlot): string {
 function resolveInvitees(ctx: Ctx, host: User, userIds: UserId[], circleIds: string[]): UserId[] {
   const friends = new Set(ctx.store.friendIds(host.id))
   const out = new Set<UserId>()
-  for (const id of userIds) if (friends.has(id)) out.add(id)
+  ctx.store.assertMembers(userIds)
+  if(userIds.some(id=>!friends.has(id))) throw badRequest('只能邀请当前空间的好友')
+  for (const id of userIds) out.add(id)
   for (const cid of circleIds) {
     const c = ctx.store.getCircle(cid)
-    if (!c || c.ownerId !== host.id) continue
+    if (!c || c.ownerId !== host.id) throw badRequest('圈子不存在或不属于你')
     for (const m of c.memberIds) if (friends.has(m)) out.add(m)
   }
   out.delete(host.id)

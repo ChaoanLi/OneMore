@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer'
-import { DEFAULT_TIMEZONE, quietHoursSendAt } from '@couju/core'
+import { DEFAULT_TIMEZONE, quietHoursSendAt, interestVisibleTo, type Interest } from '@couju/core'
 import type { OutboxEmail, Store } from '../store'
 import { newId } from '../util'
 
@@ -75,11 +75,13 @@ export class Mailer {
     private readonly autoFlush = true,
   ) {}
 
-  enqueue(msg: MailMessage & { kind: string }, opts: { recipientTz?: string; immediate?: boolean } = {}): OutboxEmail {
+  enqueue(msg: MailMessage & { kind: string }, opts: { recipientTz?: string; immediate?: boolean; spaceId?: string; recipientId?: string; objectCode?: string; interestId?: string } = {}): OutboxEmail {
     const now = this.now()
     const sendAfter = opts.immediate ? now : quietHoursSendAt(now, opts.recipientTz ?? DEFAULT_TIMEZONE)
     const item: OutboxEmail = {
       id: newId('m'),
+      spaceId: opts.spaceId, recipientId: opts.recipientId, objectCode: opts.objectCode, interestId: opts.interestId,
+      membershipJoinedAt: opts.spaceId && opts.recipientId ? this.store.getMembership(opts.spaceId,opts.recipientId)?.joinedAt : undefined,
       to: msg.to,
       subject: msg.subject,
       text: msg.text,
@@ -98,6 +100,23 @@ export class Mailer {
     return item
   }
 
+  private maySend(m: OutboxEmail): boolean {
+    if(m.kind==='verify') return true
+    if(!m.spaceId||!m.recipientId) return false
+    const membership=this.store.getMembership(m.spaceId,m.recipientId)
+    const email=this.store.getUserEmail(m.recipientId)
+    if(!membership||membership.joinedAt!==m.membershipJoinedAt||!membership.emailEnabled||!email?.enabled||email.email!==m.to||this.store.isSuppressed(m.to)) return false
+    const store=this.store.forSpace(m.spaceId)
+    if(m.objectCode) { const e=store.getEventByCode(m.objectCode); if(!e) return false; if(e.visibility!=='link'&&e.hostId!==m.recipientId&&!e.invitations.some(i=>i.userId===m.recipientId)&&!store.getResponse(e.id,m.recipientId)) return false }
+    if(m.interestId) {
+      const i=store.getInterest(m.interestId); if(!i) return false
+      const friends=new Set(store.friendIds(i.ownerId)), favorites=new Set(store.getPrefs(i.ownerId).filter(p=>p.favorite).map(p=>p.friendId))
+      const circles=new Set(i.audience.kind==='circles'?i.audience.circleIds.flatMap(id=>store.getCircle(id)?.memberIds??[]):[])
+      if(i.ownerId!==m.recipientId&&!i.joiners.some(j=>j.userId===m.recipientId)&&!interestVisibleTo(i,m.recipientId,{ownerFriendIds:friends,ownerFavoriteIds:favorites,circleMemberIds:circles})) return false
+    }
+    return true
+  }
+
   /** 发送所有到期的邮件，返回成功数量 */
   async flush(): Promise<number> {
     if (this.flushing) return 0
@@ -106,6 +125,7 @@ export class Mailer {
     try {
       for (const m of this.store.dueEmails(this.now().toISOString())) {
         try {
+          if(!this.maySend(m)) { this.store.saveOutbox({...m,status:'failed',lastError:'permission_revoked'}); continue }
           await this.transport.send({ to: m.to, subject: m.subject, text: m.text, html: m.html, headers: m.headers })
           this.store.saveOutbox({ ...m, status: 'sent', sentAt: this.now().toISOString(), attempts: m.attempts + 1, lastError: null })
           ok++

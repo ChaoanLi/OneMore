@@ -1,4 +1,5 @@
 import Taro from '@tarojs/taro'
+import { requestContext } from './requestContext'
 
 /**
  * HTTP 客户端。
@@ -7,10 +8,8 @@ import Taro from '@tarojs/taro'
  */
 const BASE = process.env.TARO_APP_API_BASE || ''
 
-let token: string | null = null
-
 export function setApiToken(t: string | null) {
-  token = t
+  requestContext.setIdentity(t)
 }
 
 export class ApiError extends Error {
@@ -26,6 +25,10 @@ export class ApiError extends Error {
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  const snapshot=requestContext.capture()
+  const routeSpace=Taro.getCurrentInstance()?.router?.params?.space
+  const isGlobal=path==='/api/me'||path.startsWith('/api/auth/')||path.startsWith('/api/spaces')||path.startsWith('/api/space-invites/')||path==='/api/me/recovery-code'||path.endsWith('/status')||path==='/api/games'
+  if(!isGlobal && (!snapshot.spaceId || (routeSpace && routeSpace!==snapshot.spaceId))) throw new ApiError(0,'stale_context','请先选择或加入此空间')
   let res: Taro.request.SuccessCallbackResult<any>
   try {
     res = await Taro.request({
@@ -34,7 +37,8 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
       data: body as any,
       header: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(snapshot.token ? { Authorization: `Bearer ${snapshot.token}` } : {}),
+        ...(!isGlobal && snapshot.spaceId ? { 'X-Space-Id': snapshot.spaceId } : {}),
       },
       dataType: 'json',
       timeout: 20000,
@@ -42,6 +46,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
   } catch {
     throw new ApiError(0, 'network', '网络好像不太稳定，稍后再试')
   }
+  if(!requestContext.isCurrent(snapshot)) throw new ApiError(0,'stale_context','空间已切换')
   if (res.statusCode >= 400) {
     const data = (res.data ?? {}) as { error?: string; message?: string }
     throw new ApiError(res.statusCode, data.error ?? 'error', data.message ?? '出了点问题')

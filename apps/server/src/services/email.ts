@@ -48,10 +48,10 @@ function settings(ctx: Ctx, rec: UserEmailRecord, devCode?: string): EmailSettin
   const kind = ctx.mailer?.transport.kind ?? 'console'
   return {
     email: rec.email,
-    enabled: rec.enabled && !!rec.email,
+    enabled: rec.enabled && !!rec.email && !!ctx.store.getMembership(ctx.store.spaceId!,rec.userId)?.emailEnabled && !ctx.store.isSuppressed(rec.email),
     pending: rec.pendingEmail,
     transport: kind,
-    ...(devCode && kind === 'console' ? { devCode } : {}),
+    ...(devCode && kind === 'console' && process.env.NODE_ENV !== 'production' ? { devCode } : {}),
   }
 }
 
@@ -112,10 +112,9 @@ export function setEmailEnabled(ctx: Ctx, me: User, raw: unknown): EmailSettings
   const { enabled } = emailToggleSchema.parse(raw)
   const rec = ctx.store.getUserEmail(me.id)
   if (!rec?.email) throw badRequest('还没有验证过的邮箱')
-  const next = { ...rec, enabled }
-  ctx.store.saveUserEmail(next)
-  if (enabled) ctx.store.unsuppress(rec.email)
-  return settings(ctx, next)
+  const member=ctx.store.getMembership(ctx.store.spaceId!,me.id)!
+  ctx.store.saveMembership({...member,emailEnabled:enabled})
+  return settings(ctx, rec)
 }
 
 export function removeEmail(ctx: Ctx, me: User): EmailSettingsResponse {
@@ -127,19 +126,19 @@ export function removeEmail(ctx: Ctx, me: User): EmailSettingsResponse {
 export function notificationEmail(ctx: Ctx, n: AppNotification) {
   if (!ctx.mailer) return
   const rec = ctx.store.getUserEmail(n.userId)
-  if (!rec?.email || !rec.enabled || ctx.store.isSuppressed(rec.email)) return
+  if (!rec?.email || !rec.enabled || !ctx.store.getMembership(ctx.store.spaceId!,n.userId)?.emailEnabled || ctx.store.isSuppressed(rec.email)) return
   const user = ctx.store.getUser(n.userId)
   const link = `${ctx.mailer.baseUrl}/#${n.link}`
   const body = renderEmail({
-    heading: n.title,
+    heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${n.title}`,
     lines: n.body ? [n.body] : [],
     cta: { text: '点开看看', url: link },
     footer: `${user?.nickname ?? ''}，你在「算我一个」打开了邮件提醒。夜里（你那边 23 点到 8 点）不会发。`,
     unsubUrl: unsubUrl(ctx, rec.email),
   })
   ctx.mailer.enqueue(
-    { to: rec.email, subject: n.title, ...body, kind: n.kind, headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, rec.email)}>` } },
-    { recipientTz: user?.timezone ?? DEFAULT_TIMEZONE },
+    { to: rec.email, subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${n.title}`, ...body, kind: n.kind, headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, rec.email)}>` } },
+    { recipientTz: user?.timezone ?? DEFAULT_TIMEZONE, spaceId: ctx.store.spaceId, recipientId: n.userId, objectCode: /[?&]code=([^&]+)/.exec(n.link)?.[1], interestId: n.objectId },
   )
 }
 
@@ -158,9 +157,15 @@ export function inviteByEmail(ctx: Ctx, me: User, code: string, raw: unknown): E
   const skipped: EmailInviteResponse['skipped'] = []
   let sent = 0
   const first = event.slots.find((s) => Date.parse(s.startUtc) > now.getTime()) ?? event.slots[0]
-  const link = `${m.baseUrl}/#/pages/event/detail?code=${event.code}`
+  const link = `${m.baseUrl}/#/pages/event/detail?code=${event.code}&space=${ctx.store.spaceId}`
 
+  // Never disclose activity details to people outside this space or outside its invitation rules.
+  const targets=input.emails.map(email=>({email,user:ctx.store.findUserEmailsByAddress(email).find(r=>r.verifiedAt&&ctx.store.isMember(r.userId))}))
+  if(targets.some(t=>!t.user)) throw badRequest('只能邀请已加入本空间并验证邮箱的成员；新人请先使用空间邀请链接')
+  if(targets.some(t=>event.visibility==='invited'&&t.user!.userId!==me.id&&!event.invitations.some(i=>i.userId===t.user!.userId)&&!ctx.store.getResponse(event.id,t.user!.userId))) throw badRequest('请先把该成员加入活动邀请名单')
   for (const email of [...new Set(input.emails)]) {
+    const recipientId=targets.find(t=>t.email===email)!.user!.userId
+    if(!ctx.store.getMembership(ctx.store.spaceId!,recipientId)?.emailEnabled) { skipped.push({email,reason:'unsubscribed'}); continue }
     if (ctx.store.isSuppressed(email)) {
       skipped.push({ email, reason: 'unsubscribed' })
       continue
@@ -180,8 +185,8 @@ export function inviteByEmail(ctx: Ctx, me: User, code: string, raw: unknown): E
     const hostWhen = first && event.hostTimezone !== DEFAULT_TIMEZONE ? `组局人那边是 ${slotInOtherZone(first, DEFAULT_TIMEZONE, event.hostTimezone)}` : ''
     const games = event.options.map((o) => `${o.emoji} ${o.name}`).join(' / ')
     const body = renderEmail({
-      heading: `${me.nickname} 约你：${event.title}`,
-      lines: [games, when, hostWhen, input.message ? `“${input.message}”` : '', '点开填个昵称就能报名，不用注册。有空就来，没空不用回。'].filter(Boolean),
+      heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${me.nickname} 约你：${event.title}`,
+      lines: [games, when, hostWhen, input.message ? `“${input.message}”` : '', '登录当前空间后即可报名，有空就来。'].filter(Boolean),
       cta: { text: '看看能不能来', url: link },
       footer: `这封邮件是 ${me.nickname} 通过「算我一个」发给你的。`,
       unsubUrl: unsubUrl(ctx, email),
@@ -189,12 +194,12 @@ export function inviteByEmail(ctx: Ctx, me: User, code: string, raw: unknown): E
     m.enqueue(
       {
         to: email,
-        subject: `${me.nickname} 约你：${event.title}`,
+        subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${me.nickname} 约你：${event.title}`,
         ...body,
         kind: 'email_invite',
         headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, email)}>`, ...(hostEmail ? { 'Reply-To': hostEmail } : {}) },
       },
-      { recipientTz: DEFAULT_TIMEZONE },
+      { recipientTz: DEFAULT_TIMEZONE, spaceId: ctx.store.spaceId, recipientId, objectCode: event.code },
     )
     ctx.store.logEmailInvite(me.id, email, event.id, now.toISOString())
     sent++

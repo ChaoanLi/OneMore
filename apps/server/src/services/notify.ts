@@ -10,8 +10,11 @@ import { notificationEmail } from './email'
 export function notify(
   ctx: Ctx,
   userId: UserId,
-  n: { kind: NotificationKind; title: string; body: string; link: string; dedupeKey: string },
+  n: { objectId?: string; kind: NotificationKind; title: string; body: string; link: string; dedupeKey: string },
 ): boolean {
+  if(!ctx.store.isMember(userId)) return false
+  const separator = n.link.includes('?') ? '&' : '?'
+  n = { ...n, link: `${n.link}${separator}space=${ctx.store.spaceId}` }
   const now = ctx.now()
   const since = new Date(now.getTime() - 72 * 3600_000).toISOString()
   const history = ctx.store.listNotifications(userId, since)

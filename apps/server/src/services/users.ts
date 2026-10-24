@@ -111,7 +111,7 @@ export function restoreWithCode(ctx: Ctx, raw: unknown): { token: string; user: 
 
 export function publicProfile(ctx: Ctx, handle: string) {
   const u = ctx.store.getUserByHandle(handle)
-  if (!u) throw notFound('找不到这个用户')
+  if (!u || !ctx.store.isMember(u.id)) throw notFound('找不到这个用户')
   return toPublic(u)
 }
 

@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro'
 import { ApiError } from './api'
+import { requestContext } from './requestContext'
 
 export function toast(title: string) {
   void Taro.showToast({ title, icon: 'none', duration: 2000 })
@@ -10,6 +11,7 @@ export function toastOk(title: string) {
 }
 
 export function toastError(e: unknown) {
+  if(e instanceof ApiError && e.code==='stale_context') return
   const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : '出了点问题'
   toast(msg)
 }
@@ -32,13 +34,14 @@ export const isH5 = process.env.TARO_ENV === 'h5'
 
 /** H5 可直接打开的完整链接；小程序里返回页面路径（用于分享卡片） */
 export function appUrl(path: string): string {
+  if(!path.startsWith('/pages/spaces/') && requestContext.capture().spaceId && !/[?&]space=/.test(path)) path+=`${path.includes('?')?'&':'?'}space=${requestContext.capture().spaceId}`
   if (isH5 && typeof window !== 'undefined') {
     return `${window.location.origin}${window.location.pathname}#${path}`
   }
   return path
 }
 
-export const eventPath = (code: string) => `/pages/event/detail?code=${code}`
+export const eventPath = (code: string) => `/pages/event/detail?code=${code}&space=${requestContext.capture().spaceId ?? ''}`
 
 export function go(url: string) {
   void Taro.navigateTo({ url })

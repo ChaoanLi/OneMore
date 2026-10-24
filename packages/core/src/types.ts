@@ -255,6 +255,7 @@ export type NotificationKind =
   | 'join_request'
 
 export interface AppNotification {
+  objectId?: string
   id: string
   userId: UserId
   kind: NotificationKind

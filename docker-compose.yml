@@ -8,6 +8,7 @@ services:
     env_file: .env
     environment:
       DB_PATH: /data/couju.db
+      NODE_ENV: production
     volumes:
       - appdata:/data
 

@@ -26,8 +26,9 @@ if (existsSync(join(clientDist, 'index.html'))) {
   app.get('/', serveStatic({ path: join(root, 'index.html') }))
 }
 
-const swept = sweepExpiredInterests(ctx)
-setInterval(() => sweepExpiredInterests(ctx), 3600_000).unref()
+const sweep = () => store.allSpaces().reduce((n,s)=>n+sweepExpiredInterests({...ctx,store:store.forSpace(s.id)}),0)
+const swept = sweep()
+setInterval(sweep, 3600_000).unref()
 // 发件队列：每 30 秒发送到期的邮件（含夜间顺延、失败重试）
 setInterval(() => void ctx.mailer?.flush(), 30_000).unref()
 void ctx.mailer?.flush()

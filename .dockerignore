@@ -8,3 +8,9 @@ apps/server/data
 .git
 .DS_Store
 coverage
+
+.superpowers
+.local-backups
+**/*.db*
+**/*.bak
+docs/DEPLOYMENT-STATUS.md

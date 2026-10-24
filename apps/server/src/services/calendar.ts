@@ -151,7 +151,7 @@ export function buildFeed(ctx: Ctx, token: string, baseUrl: string, appName: str
     const byId = new Map(ctx.store.getUsers(event.final.rosterIds).map((u) => [u.id, u.nickname]))
     const names = event.final.rosterIds.map((id) => byId.get(id)).filter((n): n is string => !!n)
     const end = slot.endUtc ?? new Date(Date.parse(slot.startUtc) + 2 * 3600_000).toISOString()
-    const link = `${baseUrl}/#/pages/event/detail?code=${event.code}`
+    const link = `${baseUrl}/#/pages/event/detail?code=${event.code}&space=${ctx.store.spaceId}`
     const desc = [option ? `${option.emoji} ${option.name}` : '', names.length ? `名单：${names.join('、')}` : '', event.note, link]
       .filter(Boolean)
       .join('\n')

@@ -9,7 +9,8 @@
     "start": "tsx src/index.ts",
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "import:legacy": "tsx src/import-legacy-cli.ts"
   },
   "dependencies": {
     "@couju/core": "*",

@@ -1,3 +1,4 @@
+import type { SpaceSummary } from './spaces'
 import type { AiDraft, DraftSuggestion } from './ai/draft'
 import type { EventEvaluation, MissingRole } from './quorum'
 import type { SlotDisplay } from './time'
@@ -115,6 +116,7 @@ export interface AuthResponse {
 }
 
 export interface MeResponse {
+  spaces: SpaceSummary[]
   user: User
   unread: number
 }

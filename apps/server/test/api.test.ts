@@ -18,8 +18,12 @@ const MAHJONG = { gameKey: 'riichi', name: '日麻', minPlayers: 4, maxPlayers: 
 let app: ReturnType<typeof createApp>['app']
 let mail: ConsoleTransport
 let mailer: Mailer
+let testSpace: string | undefined
+let spaceOwner: string | undefined
 
 function setup(ai: DraftProvider = new MockDraftProvider()) {
+  testSpace = undefined
+  spaceOwner = undefined
   now = new Date('2026-10-23T15:00:00Z')
   const store = new Store(':memory:')
   mail = new ConsoleTransport(false)
@@ -30,7 +34,7 @@ function setup(ai: DraftProvider = new MockDraftProvider()) {
 async function call<T = any>(method: string, path: string, token?: string, body?: unknown): Promise<{ status: number; data: T }> {
   const res = await app.request(path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(testSpace ? { 'X-Space-Id': testSpace } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   return { status: res.status, data: (await res.json()) as T }
@@ -38,6 +42,8 @@ async function call<T = any>(method: string, path: string, token?: string, body?
 
 async function guest(nickname: string, timezone = SH) {
   const { data } = await call<{ token: string; user: { id: string; handle: string } }>('POST', '/api/auth/guest', undefined, { nickname, timezone })
+  if(!testSpace) { testSpace=(await call('POST','/api/spaces',data.token,{name:'测试空间'})).data.space.id; spaceOwner=data.token }
+  else { const invite=(await call('POST',`/api/spaces/${testSpace}/invite`,spaceOwner)).data.token; const request=(await call('POST',`/api/space-invites/${invite}/requests`,data.token)).data.request; await call('POST',`/api/spaces/${testSpace}/requests/${request.id}/approve`,spaceOwner) }
   return { token: data.token, id: data.user.id, handle: data.user.handle, nickname }
 }
 
@@ -70,13 +76,14 @@ describe('验收流程：发起 → 分享链接 → 朋友报名 → 系统判�
     expect(created.status).toBe(200)
     const code = created.data.code
 
-    // 朋友打开链接：未登录也能看到，时间按设备时区（北京）显示，并对照发起人时间
-    const anon = await view(code, undefined, SH)
+    // 空间成员打开链接：登录后能看到，时间按设备时区（北京）显示，并对照发起人时间
+    const previewer = await guest('预览成员', SH)
+    const anon = await view(code, previewer.token, SH)
     expect(anon.restricted).toBe(false)
     expect(anon.event.slots[0]).toMatchObject({ dateLabel: '10/25 周日', timeLabel: '09:00–11:30', zoneLabel: '北京时间' })
     expect(anon.event.slots[0]!.hostLine).toBe('美中时间 10/24 周六 20:00 (-1天)')
     expect(anon.event.slots[0]!.localDate).toBe('2026-10-25')
-    expect(anon.viewer.role).toBe('anonymous')
+    expect(anon.viewer.role).toBe('participant')
 
     // 只填昵称就能报名
     const a = await guest('阿杰')
@@ -124,14 +131,15 @@ describe('验收流程：发起 → 分享链接 → 朋友报名 → 系统判�
     expect(list.data.active[0]).toMatchObject({ code, statusText: '成了', progress: '🀄 日麻 · 4/4 人' })
   })
 
-  it('默认用北京时间：未登录且没带时区时按北京时间显示，并对照发起人时间', async () => {
+  it('默认用北京时间：空间成员按北京时间显示，并对照发起人时间', async () => {
     const host = await guest('小林', CHI)
     const { data } = await call<{ code: string }>('POST', '/api/events', host.token, { options: [MAHJONG], slots: [slot(sat)] })
-    const v = await view(data.code)
+    const previewer = await guest('空间成员')
+    const v = await view(data.code, previewer.token)
     expect(v.viewer.timezone).toBe(SH)
     expect(v.event.slots[0]).toMatchObject({ zoneLabel: '北京时间', timeLabel: '09:00–11:30' })
     expect(v.event.slots[0]!.hostLine).toContain('美中时间')
-    const bogus = await view(data.code, undefined, 'Not/AZone')
+    const bogus = await view(data.code, previewer.token, 'Not/AZone')
     expect(bogus.viewer.timezone).toBe(SH)
   })
 
@@ -200,7 +208,8 @@ describe('隐私：不暴露谁拒绝了、谁被邀请、常玩标记', () => {
     const theirs = await call<{ friends: { favorite: boolean }[] }>('GET', '/api/friends', a.token)
     expect(theirs.data.friends[0]!.favorite).toBe(false)
 
-    const circle = await call<{ circle: { memberIds: string[] } }>('POST', '/api/circles', me.token, { name: '麻将搭子', memberIds: [a.id, stranger.id] })
+    expect((await call('POST', '/api/circles', me.token, { name: '麻将搭子', memberIds: [a.id, stranger.id] })).status).toBe(400)
+    const circle = await call<{ circle: { memberIds: string[] } }>('POST', '/api/circles', me.token, { name: '麻将搭子', memberIds: [a.id] })
     expect(circle.data.circle.memberIds).toEqual([a.id])
     expect((await call<{ circles: unknown[] }>('GET', '/api/circles', a.token)).data.circles).toEqual([])
   })
@@ -578,18 +587,19 @@ describe('邮件提醒', () => {
     expect(mail.sent.filter((x) => x.to === 'kiki@example.com').length).toBeGreaterThan(0)
   })
 
-  it('用邮件叫还没用 App 的朋友：去重、只有组局人能发、退订后不再发', async () => {
+  it('用邮件邀请已验证邮箱的空间成员：去重、仅组局人能发、退订有效', async () => {
     now = new Date('2026-10-23T03:00:00Z') // 北京 11:00
     const host = await guest('小林', CHI)
     const { data } = await call<{ code: string }>('POST', '/api/events', host.token, { options: [MAHJONG], slots: [slot(sat)] })
+    await verified('收件人A', SH, 'a@example.com'); await verified('收件人B', SH, 'b@example.com')
     const r = await call<import('@couju/core').EmailInviteResponse>('POST', `/api/events/${data.code}/email-invite`, host.token, {
       emails: ['a@example.com', 'b@example.com', 'a@example.com'],
       message: '缺一个，来吗',
     })
     expect(r.data).toMatchObject({ sent: 2, skipped: [], transport: 'console' })
     await mailer.flush()
-    const inv = mail.sent.find((x) => x.to === 'a@example.com')!
-    expect(inv.subject).toBe('小林 约你：日麻')
+    const inv = mail.sent.find((x) => x.to === 'a@example.com' && x.subject.includes('约你'))!
+    expect(inv.subject).toBe('[测试空间] 小林 约你：日麻')
     expect(inv.text).toContain('北京时间')
     expect(inv.text).toContain('“缺一个，来吗”')
 
@@ -616,7 +626,7 @@ describe('发件队列', () => {
     let t = new Date('2026-10-23T03:00:00Z')
     const failing = { kind: 'smtp' as const, send: async () => { throw new Error('SMTP down') } }
     const m = new Mailer(store, failing, () => t, 'https://x.test', false)
-    m.enqueue({ to: 'a@example.com', subject: 's', text: 't', html: '<p>t</p>', kind: 'test' }, { immediate: true })
+    m.enqueue({ to: 'a@example.com', subject: 's', text: 't', html: '<p>t</p>', kind: 'verify' }, { immediate: true })
     for (let i = 1; i <= 5; i++) {
       await m.flush()
       const [item] = store.listOutbox()

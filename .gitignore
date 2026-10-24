@@ -10,6 +10,7 @@ dist/
 !apps/client/.env.test
 !apps/client/.env.production
 *.db
+*.bak
 *.db-shm
 *.db-wal
 *.sqlite*

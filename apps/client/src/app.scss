@@ -1151,3 +1151,9 @@ taro-picker-core .list-row {
   border-bottom: 1.5px dashed var(--c-ink);
   cursor: pointer;
 }
+
+/* Independent spaces */
+.space-bar { padding: 12px 0; margin-bottom: 20px; border-bottom: 1px solid #eee; gap: 12px; }
+.space-bar > view:first-child { min-width: 0; overflow-wrap: anywhere; }
+.space-link { overflow-wrap: anywhere; font-size: 12px; color: #777; padding: 12px; background: #f7f7f7; border-radius: 8px; }
+.space-member { padding-top: 12px; border-top: 1px solid #eee; }

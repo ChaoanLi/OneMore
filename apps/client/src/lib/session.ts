@@ -1,6 +1,7 @@
 import Taro from '@tarojs/taro'
 import { useEffect, useReducer } from 'react'
-import { DEFAULT_TIMEZONE, isValidTimeZone, type AuthResponse, type MeResponse, type User } from '@couju/core'
+import { DEFAULT_TIMEZONE, isValidTimeZone, type AuthResponse, type MeResponse, type User, type SpaceSummary } from '@couju/core'
+import { requestContext } from './requestContext'
 import { ApiError, get, post, setApiToken } from './api'
 
 /**
@@ -14,9 +15,12 @@ interface SessionState {
   ready: boolean
   user: User | null
   unread: number
+  spaces: SpaceSummary[]
+  activeSpace: string | null
+  revision: number
 }
 
-let state: SessionState = { ready: false, user: null, unread: 0 }
+let state: SessionState = { ready: false, user: null, unread: 0, spaces: [], activeSpace: null, revision: 0 }
 const listeners = new Set<() => void>()
 
 function setState(patch: Partial<SessionState>) {
@@ -75,7 +79,8 @@ export function bootSession(): Promise<void> {
     }
     try {
       const me = await get<MeResponse>('/api/me')
-      setState({ ready: true, user: me.user, unread: me.unread })
+      applySpaces(me.spaces, me.user)
+      setState({ ready: true, user: me.user, unread: 0 })
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         clearLocal()
@@ -92,7 +97,7 @@ export function bootSession(): Promise<void> {
 function saveAuth(res: AuthResponse) {
   Taro.setStorageSync(TOKEN_KEY, res.token)
   setApiToken(res.token)
-  setState({ ready: true, user: res.user, unread: 0 })
+  setState({ ready: true, user: res.user, unread: 0, spaces: [], activeSpace: null, revision: state.revision+1 })
 }
 
 function clearLocal() {
@@ -104,12 +109,14 @@ function clearLocal() {
 export async function signupGuest(nickname: string, timezone = DEFAULT_TIMEZONE): Promise<User> {
   const res = await post<AuthResponse>('/api/auth/guest', { nickname, timezone })
   saveAuth(res)
+  await refreshSpaces()
   return res.user
 }
 
 export async function restoreAccount(handle: string, recoveryCode: string): Promise<User> {
   const res = await post<AuthResponse>('/api/auth/restore', { handle, recoveryCode })
   saveAuth(res)
+  await refreshSpaces()
   return res.user
 }
 
@@ -121,7 +128,9 @@ export async function refreshMe() {
   if (!state.user) return
   try {
     const me = await get<MeResponse>('/api/me')
-    setState({ user: me.user, unread: me.unread })
+    applySpaces(me.spaces, me.user)
+    setState({ user: me.user })
+    if(state.activeSpace) { const n=await get<{unread:number}>('/api/notifications'); setState({unread:n.unread}) }
   } catch {
     // 忽略刷新失败
   }
@@ -133,7 +142,28 @@ export function setUnread(unread: number) {
 
 export function logout() {
   clearLocal()
-  setState({ user: null, unread: 0 })
+  setState({ user: null, unread: 0, spaces: [], activeSpace: null, revision: state.revision+1 })
+}
+
+function applySpaces(spaces: SpaceSummary[], user: User) {
+  const key=`onemore.space.${user.id}`
+  const saved=Taro.getStorageSync(key) as string
+  const active=spaces.some(s=>s.id===state.activeSpace) ? state.activeSpace : spaces.find(s=>s.id===saved)?.id ?? spaces[0]?.id ?? null
+  requestContext.setSpace(active)
+  setState({spaces,activeSpace:active,revision:active!==state.activeSpace?state.revision+1:state.revision})
+  if(active) Taro.setStorageSync(key,active)
+}
+export async function refreshSpaces() {
+  const me=await get<MeResponse>('/api/me')
+  applySpaces(me.spaces,me.user)
+  setState({user:me.user})
+}
+export async function selectSpace(id: string, url='/pages/index/index') {
+  if(!state.spaces.some(s=>s.id===id)) { await refreshSpaces(); if(!state.spaces.some(s=>s.id===id)) throw new ApiError(403,'forbidden','你还不是这个空间的成员') }
+  requestContext.setSpace(id)
+  setState({activeSpace:id,unread:0,revision:state.revision+1})
+  Taro.setStorageSync(`onemore.space.${state.user!.id}`,id)
+  await Taro.reLaunch({url})
 }
 
 // ---------- 需要身份时弹出“怎么称呼你” ----------
