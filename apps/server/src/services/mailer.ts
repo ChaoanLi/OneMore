@@ -81,7 +81,7 @@ export class Mailer {
     const item: OutboxEmail = {
       id: newId('m'),
       spaceId: opts.spaceId, recipientId: opts.recipientId, objectCode: opts.objectCode, interestId: opts.interestId,
-      membershipJoinedAt: opts.spaceId && opts.recipientId ? this.store.getMembership(opts.spaceId,opts.recipientId)?.joinedAt : undefined,
+      membershipGeneration: opts.spaceId && opts.recipientId ? this.store.getMembership(opts.spaceId,opts.recipientId)?.generation : undefined,
       to: msg.to,
       subject: msg.subject,
       text: msg.text,
@@ -105,7 +105,7 @@ export class Mailer {
     if(!m.spaceId||!m.recipientId) return false
     const membership=this.store.getMembership(m.spaceId,m.recipientId)
     const email=this.store.getUserEmail(m.recipientId)
-    if(!membership||membership.joinedAt!==m.membershipJoinedAt||!membership.emailEnabled||!email?.enabled||email.email!==m.to||this.store.isSuppressed(m.to)) return false
+    if(!membership||membership.generation!==m.membershipGeneration||!membership.emailEnabled||!email?.enabled||email.email!==m.to||this.store.isSuppressed(m.to)) return false
     const store=this.store.forSpace(m.spaceId)
     if(m.objectCode) { const e=store.getEventByCode(m.objectCode); if(!e) return false; if(e.visibility!=='link'&&e.hostId!==m.recipientId&&!e.invitations.some(i=>i.userId===m.recipientId)&&!store.getResponse(e.id,m.recipientId)) return false }
     if(m.interestId) {

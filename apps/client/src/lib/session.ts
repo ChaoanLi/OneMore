@@ -18,9 +18,10 @@ interface SessionState {
   spaces: SpaceSummary[]
   activeSpace: string | null
   revision: number
+  switching: boolean
 }
 
-let state: SessionState = { ready: false, user: null, unread: 0, spaces: [], activeSpace: null, revision: 0 }
+let state: SessionState = { ready: false, user: null, unread: 0, spaces: [], activeSpace: null, revision: 0, switching: false }
 const listeners = new Set<() => void>()
 
 function setState(patch: Partial<SessionState>) {
@@ -97,7 +98,7 @@ export function bootSession(): Promise<void> {
 function saveAuth(res: AuthResponse) {
   Taro.setStorageSync(TOKEN_KEY, res.token)
   setApiToken(res.token)
-  setState({ ready: true, user: res.user, unread: 0, spaces: [], activeSpace: null, revision: state.revision+1 })
+  setState({ ready: true, user: res.user, unread: 0, spaces: [], activeSpace: null, revision: state.revision + 1 })
 }
 
 function clearLocal() {
@@ -115,8 +116,14 @@ export async function signupGuest(nickname: string, timezone = DEFAULT_TIMEZONE)
 
 export async function restoreAccount(handle: string, recoveryCode: string): Promise<User> {
   const res = await post<AuthResponse>('/api/auth/restore', { handle, recoveryCode })
+  setState({ switching: true })
   saveAuth(res)
   await refreshSpaces()
+  try {
+    await Taro.reLaunch({ url: '/pages/me/index' })
+  } finally {
+    setState({ switching: false })
+  }
   return res.user
 }
 
@@ -130,7 +137,10 @@ export async function refreshMe() {
     const me = await get<MeResponse>('/api/me')
     applySpaces(me.spaces, me.user)
     setState({ user: me.user })
-    if(state.activeSpace) { const n=await get<{unread:number}>('/api/notifications'); setState({unread:n.unread}) }
+    if (state.activeSpace) {
+      const n = await get<{ unread: number }>('/api/notifications')
+      setState({ unread: n.unread })
+    }
   } catch {
     // 忽略刷新失败
   }
@@ -142,28 +152,43 @@ export function setUnread(unread: number) {
 
 export function logout() {
   clearLocal()
-  setState({ user: null, unread: 0, spaces: [], activeSpace: null, revision: state.revision+1 })
+  void Taro.reLaunch({ url: '/pages/me/index' })
+  setState({ user: null, unread: 0, spaces: [], activeSpace: null, revision: state.revision + 1 })
 }
 
 function applySpaces(spaces: SpaceSummary[], user: User) {
-  const key=`onemore.space.${user.id}`
-  const saved=Taro.getStorageSync(key) as string
-  const active=spaces.some(s=>s.id===state.activeSpace) ? state.activeSpace : spaces.find(s=>s.id===saved)?.id ?? spaces[0]?.id ?? null
+  const key = `onemore.space.${user.id}`
+  const saved = Taro.getStorageSync(key) as string
+  const previous = state.activeSpace
+  const active = spaces.some((s) => s.id === state.activeSpace)
+    ? state.activeSpace
+    : (spaces.find((s) => s.id === saved)?.id ?? spaces[0]?.id ?? null)
   requestContext.setSpace(active)
-  setState({spaces,activeSpace:active,revision:active!==state.activeSpace?state.revision+1:state.revision})
-  if(active) Taro.setStorageSync(key,active)
+  setState({ spaces, activeSpace: active, revision: active !== state.activeSpace ? state.revision + 1 : state.revision })
+  if (active) Taro.setStorageSync(key, active)
+  if (previous && previous !== active) {
+    setState({ switching: true, unread: 0 })
+    void Taro.reLaunch({ url: '/pages/index/index' }).finally(() => setState({ switching: false }))
+  }
 }
 export async function refreshSpaces() {
-  const me=await get<MeResponse>('/api/me')
-  applySpaces(me.spaces,me.user)
-  setState({user:me.user})
+  const me = await get<MeResponse>('/api/me')
+  applySpaces(me.spaces, me.user)
+  setState({ user: me.user })
 }
-export async function selectSpace(id: string, url='/pages/index/index') {
-  if(!state.spaces.some(s=>s.id===id)) { await refreshSpaces(); if(!state.spaces.some(s=>s.id===id)) throw new ApiError(403,'forbidden','你还不是这个空间的成员') }
+export async function selectSpace(id: string, url = '/pages/index/index') {
+  if (!state.spaces.some((s) => s.id === id)) {
+    await refreshSpaces()
+    if (!state.spaces.some((s) => s.id === id)) throw new ApiError(403, 'forbidden', '你还不是这个空间的成员')
+  }
   requestContext.setSpace(id)
-  setState({activeSpace:id,unread:0,revision:state.revision+1})
-  Taro.setStorageSync(`onemore.space.${state.user!.id}`,id)
-  await Taro.reLaunch({url})
+  setState({ activeSpace: id, unread: 0, revision: state.revision + 1, switching: true })
+  Taro.setStorageSync(`onemore.space.${state.user!.id}`, id)
+  try {
+    await Taro.reLaunch({ url })
+  } finally {
+    setState({ switching: false })
+  }
 }
 
 // ---------- 需要身份时弹出“怎么称呼你” ----------

@@ -34,7 +34,7 @@ export interface OutboxEmail {
   recipientId?: string
   objectCode?: string
   interestId?: string
-  membershipJoinedAt?: string
+  membershipGeneration?: string
   to: string
   subject: string
   text: string

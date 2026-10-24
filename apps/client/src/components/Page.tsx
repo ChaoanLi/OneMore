@@ -3,6 +3,7 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { useEffect, useState, type PropsWithChildren, type ReactNode } from 'react'
 import { COMMON_TIMEZONES, DEFAULT_TIMEZONE, zoneLabel } from '@couju/core'
 import { deviceTimezone, signupGuest, selectSpace, useIdentityRequest, useSession } from '../lib/session'
+import { makePageUrl } from '../lib/pageUrl'
 import { toastError } from '../lib/ui'
 import { Button, Sheet, cx } from './ui'
 import { Logo } from './Logo'
@@ -12,29 +13,48 @@ type NavKey = 'home' | 'calendar' | 'friends' | 'me'
 
 /** 页面外壳：统一边距、底部导航、底部操作栏，以及“怎么称呼你”弹层 */
 export function Page(props: PropsWithChildren<{ nav?: NavKey; footer?: ReactNode; className?: string; global?: boolean }>) {
-  const session=useSession()
-  const router=useRouter()
-  const linked=router.params.space
-  const global=props.global || props.nav==='me'
-  const allowed=global || (!!session.activeSpace && (!linked || linked===session.activeSpace))
-  const denied=!!linked && session.ready && !session.spaces.some(s=>s.id===linked)
-  useEffect(()=>{
-    if(!global && session.ready && linked && session.spaces.some(s=>s.id===linked) && linked!==session.activeSpace) {
-      const params=Object.entries(router.params).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v??'')}`).join('&')
-      void selectSpace(linked, `${router.path}?${params}`).catch(toastError)
+  const session = useSession()
+  const router = useRouter()
+  const linked = router.params.space
+  const global = props.global || props.nav === 'me'
+  const allowed = !session.switching && (global || (!!session.activeSpace && (!linked || linked === session.activeSpace)))
+  const denied = !!linked && session.ready && !session.spaces.some((s) => s.id === linked)
+  useEffect(() => {
+    if (!global && session.ready && linked && session.spaces.some((s) => s.id === linked) && linked !== session.activeSpace) {
+      void selectSpace(linked, makePageUrl(router.path, router.params)).catch(toastError)
     }
-  },[linked,session.activeSpace,session.ready,global])
+  }, [linked, session.activeSpace, session.ready, global])
   return (
     <View className={cx('page', props.nav && 'page--nav', !!props.footer && 'page--footer', props.className)}>
-      {session.ready && session.user && !props.global && <View className='space-bar row row--between' onClick={()=>void Taro.navigateTo({url:'/pages/spaces/index'})}>
-        <View><Text className='muted small'>当前空间 · </Text><Text>{session.spaces.find(s=>s.id===session.activeSpace)?.name ?? '尚未选择'}</Text></View><Text className='link small'>切换 / 管理</Text>
-      </View>}
-      {!session.ready ? <View className='empty'>正在加载账号…</View> : allowed ? props.children : <View className='empty'>
-        <View className='h2'>{denied?'无法访问这个空间':'先选择一个空间'}</View>
-        <View className='muted mt12'>{denied?'活动仅向已加入该空间的成员开放。':'每个空间的朋友、活动和通知独立。创建空间，或通过朋友的邀请链接申请加入。'}</View>
-        <Button className='mt16' onClick={()=>void Taro.navigateTo({url:'/pages/spaces/index'})}>创建或选择空间</Button>
-        {!session.user&&<Button className='mt12' kind='ghost' onClick={()=>void Taro.navigateTo({url:'/pages/me/index?restore=1'})}>恢复已有账号</Button>}
-      </View>}
+      {session.ready && session.user && !props.global && (
+        <View className='space-bar row row--between' onClick={() => void Taro.navigateTo({ url: '/pages/spaces/index' })}>
+          <View>
+            <Text className='muted small'>当前空间 · </Text>
+            <Text>{session.spaces.find((s) => s.id === session.activeSpace)?.name ?? '尚未选择'}</Text>
+          </View>
+          <Text className='link small'>切换 / 管理</Text>
+        </View>
+      )}
+      {!session.ready ? (
+        <View className='empty'>正在加载账号…</View>
+      ) : allowed ? (
+        props.children
+      ) : (
+        <View className='empty'>
+          <View className='h2'>{denied ? '无法访问这个空间' : '先选择一个空间'}</View>
+          <View className='muted mt12'>
+            {denied ? '活动仅向已加入该空间的成员开放。' : '每个空间的朋友、活动和通知独立。创建空间，或通过朋友的邀请链接申请加入。'}
+          </View>
+          <Button className='mt16' onClick={() => void Taro.navigateTo({ url: '/pages/spaces/index' })}>
+            创建或选择空间
+          </Button>
+          {!session.user && (
+            <Button className='mt12' kind='ghost' onClick={() => void Taro.navigateTo({ url: '/pages/me/index?restore=1' })}>
+              恢复已有账号
+            </Button>
+          )}
+        </View>
+      )}
 
       {allowed && !!props.footer && (
         <View className='footer-bar'>
@@ -127,7 +147,12 @@ function IdentitySheet() {
           onConfirm={submit}
         />
       </View>
-      <Picker mode='selector' range={zones.map((z) => `${zoneLabel(z)}（${z}）`)} value={Math.max(0, zones.indexOf(tz))} onChange={(e) => setTz(zones[Number(e.detail.value)] ?? tz)}>
+      <Picker
+        mode='selector'
+        range={zones.map((z) => `${zoneLabel(z)}（${z}）`)}
+        value={Math.max(0, zones.indexOf(tz))}
+        onChange={(e) => setTz(zones[Number(e.detail.value)] ?? tz)}
+      >
         <View className='row mt12 gap8'>
           <Text className='muted'>时间按{zoneLabel(tz)}显示</Text>
           <Text className='link small'>改时区</Text>

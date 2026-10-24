@@ -339,7 +339,7 @@ function EmailInviteSheet(props: { open: boolean; code: string; onClose: () => v
   }
   return (
     <Sheet open={props.open} onClose={props.onClose} title='用邮件叫人'>
-      <View className='sub mt4'>给还没用过的朋友发一封邀请，对方点开、填个昵称就能报名。每封都带退订链接，不会变成骚扰。</View>
+      <View className='sub mt4'>仅能发给本空间已验证邮箱的成员。新人请先用空间邀请链接申请加入，每封邮件都带退订链接。</View>
       <Textarea className='textarea mt12' placeholder='朋友的邮箱，多个用空格或逗号隔开' maxlength={600} value={text} onInput={(e) => setText(e.detail.value)} />
       <Input className='input mt8' placeholder='附一句话（可选），比如“缺一个，来吗”' maxlength={100} value={message} onInput={(e) => setMessage(e.detail.value)} />
       <View className='muted mt8'>时间按北京时间写，并附上你那边的时间。夜里不发，攒到早上 8:30。</View>
@@ -828,7 +828,7 @@ function HostPanel(props: {
 
         {hasTop && <View className='divider' />}
         <View className='sub'>
-          {invitees.length === 0 ? '没有单独叫人，全靠链接' : `单独叫了 ${invitees.length} 人，${invitees.filter((i) => i.responded).length} 人回了话`}
+          {invitees.length === 0 ? '没有单独叫人，空间成员可凭链接报名' : `单独叫了 ${invitees.length} 人，${invitees.filter((i) => i.responded).length} 人回了话`}
           {hostOnly && hostOnly.declinedCount > 0 ? `，${hostOnly.declinedCount} 人这次来不了` : ''}
         </View>
         {invitees.length > 0 && (
@@ -902,7 +902,7 @@ function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView
   const text = `【${APP_NAME}】${host.nickname} 约你：${event.title}\n${games}${first ? ` · ${first.line}${first.zoneAbbr ? ` ${first.zoneAbbr}` : ''}${event.slots.length > 1 ? ` 等 ${event.slots.length} 个时间` : ''}` : ''}\n有空就来，没空不用回 👉`
   return (
     <Sheet open={props.open} onClose={props.onClose} title={props.created ? '局开好了，丢到群里吧' : '叫上朋友'}>
-      <View className='sub mt4'>朋友点开、填个昵称就能报名，时间会自动换成他们那边的。</View>
+      <View className='sub mt4'>已加入本空间的朋友登录后即可报名，时间会自动换成他们那边的。</View>
       <View className='share-text mt12'>
         {text}
         {'\n'}

@@ -126,7 +126,7 @@ export interface TimeSlot {
 export type EventMode = 'online' | 'offline'
 
 /**
- * link：持有链接的人都能报名（适合发到群里）。
+ * link：当前空间的成员持链接可以报名（适合发到本空间的群里）。
  * invited：只有被邀请的好友/圈子成员能看到详情并报名。
  */
 export type Visibility = 'link' | 'invited'
@@ -252,6 +252,7 @@ export type NotificationKind =
   | 'waitlist_promoted'
   | 'interest_new'
   | 'interest_ready'
+  | 'interest_changed'
   | 'join_request'
 
 export interface AppNotification {

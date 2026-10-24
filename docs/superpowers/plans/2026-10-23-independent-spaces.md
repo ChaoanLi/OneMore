@@ -33,11 +33,11 @@
 
 **Interfaces:** `Store.forSpace(spaceId: string): Store`, readonly `Store.spaceId`; `getSpace`, `listSpaces(userId)`, `getMembership(spaceId,userId)`; space service create/list/invite/request/approve/reject/remove. Root identity store cannot read business data without scope.
 
-- [ ] Write failing API tests: one guest creates A/B; a second member joins only through approved request; missing/forged scope denied; outsider activity preview denied; independent identical friendship pairs.
-- [ ] Run `npm run test -w @couju/server -- --reporter=dot`; observe new failures before implementation.
-- [ ] Add versioned space tables and immutable scoped persistence. Preserve legacy tables; back up persistent database before first schema upgrade.
-- [ ] Implement owner/member management, revocable hashed invite tokens, membership transactions and safe exit/rejoin cleanup.
-- [ ] Verify tests for independent queries, concurrent contexts, invalid owner removal, repeated approval and rejoin. Commit scoped storage.
+- [x] Write failing API tests: one guest creates A/B; a second member joins only through approved request; missing/forged scope denied; outsider activity preview denied; independent identical friendship pairs.
+- [x] Run `npm run test -w @couju/server -- --reporter=dot`; observe new failures before implementation.
+- [x] Add versioned space tables and immutable scoped persistence. Preserve legacy tables; back up persistent database before first schema upgrade.
+- [x] Implement owner/member management, revocable hashed invite tokens, membership transactions and safe exit/rejoin cleanup.
+- [x] Verify tests for independent queries, concurrent contexts, invalid owner removal, repeated approval and rejoin. Commit scoped storage.
 
 ### Task 2: API, object authorization, mail and calendar boundaries
 
@@ -45,11 +45,11 @@
 
 **Interfaces:** Authenticated space requests use `X-Space-Id`; `GET /api/me` returns account and spaces; `/api/spaces` and `/api/space-invites/:token` manage membership. Business routes consume a per-request Ctx. Calendar token resolves user+space. Outbox items carry spaceId/recipientId/object reference.
 
-- [ ] Add failing tests for cross-space event/circle/interest reads and writes, injected invitees/rosters, notification counts, ICS revocation and delayed mail cancellation.
-- [ ] Run targeted tests; implement route middleware requiring active membership and scoped service context, independent global account routes, strict object references and space links.
-- [ ] Scope calendar tokens and recheck permissions before dispatching queued email. Suppress unknown recipients and legacy unscoped non-verification mail.
-- [ ] Iterate spaces in background sweep; update seed to explicit demo space. Adapt existing API fixtures to approved memberships, replacing obsolete anonymous-preview and outsider email expectations.
-- [ ] Verify full server suite and typecheck; commit server boundary.
+- [x] Add failing tests for cross-space event/circle/interest reads and writes, injected invitees/rosters, notification counts, ICS revocation and delayed mail cancellation.
+- [x] Run targeted tests; implement route middleware requiring active membership and scoped service context, independent global account routes, strict object references and space links.
+- [x] Scope calendar tokens and recheck permissions before dispatching queued email. Suppress unknown recipients and legacy unscoped non-verification mail.
+- [x] Iterate spaces in background sweep; update seed to explicit demo space. Adapt existing API fixtures to approved memberships, replacing obsolete anonymous-preview and outsider email expectations.
+- [x] Verify full server suite and typecheck; commit server boundary.
 
 ### Task 3: Space UI and client state
 
@@ -57,10 +57,10 @@
 
 **Interfaces:** API captures space and session generation when starting requests; stale completion throws `stale_context`. Session exposes spaces, activeSpace, selectSpace and refreshSpaces. Page mounts business children only within authorized active membership and resets children on switch.
 
-- [ ] Write failing pure client context tests for delayed A response after selecting B and logout/account switch; test scope-bound draft reset.
-- [ ] Implement selection persistence bound to user identity, space header, stale result guard, initial no-space view, and reset of drafts/children/unread on switch.
-- [ ] Add create/join/approval/member management UI using established components. All event/friend/share links bind space; deep links authorize before switching.
-- [ ] Verify client types and H5 production build, then browser flows and small-screen layout; commit client.
+- [x] Write failing pure client context tests for delayed A response after selecting B and logout/account switch; test scope-bound draft reset.
+- [x] Implement selection persistence bound to user identity, space header, stale result guard, initial no-space view, and reset of drafts/children/unread on switch.
+- [x] Add create/join/approval/member management UI using established components. All event/friend/share links bind space; deep links authorize before switching.
+- [x] Verify client types and H5 production build, then browser flows and small-screen layout; commit client.
 
 ### Task 4: Legacy import, documentation, final review and GitHub
 
@@ -68,9 +68,9 @@
 
 **Interfaces:** CLI requires explicit target space and complete member allowlist; preview default, `--apply` transaction with migration receipt and pre-import backup. Reject/skip objects containing non-allowlisted references. Never import historical outbox, notifications or feeds.
 
-- [ ] Write failing import tests: partial participant sets skipped, dry-run no mutation, repeated apply idempotent and old data remains unavailable.
-- [ ] Implement CLI, migration guide and current deployment status documentation without local resource IDs.
-- [ ] Run `npm test`, `npm run typecheck`, `npm run build`; inspect final diff and fresh independent code review; fix important findings with regression tests.
+- [x] Write failing import tests: partial participant sets skipped, dry-run no mutation, repeated apply idempotent and old data remains unavailable.
+- [x] Implement CLI, migration guide and current deployment status documentation without local resource IDs.
+- [x] Run `npm test`, `npm run typecheck`, `npm run build`; inspect final diff and fresh independent code review; fix important findings with regression tests.
 - [ ] Check staged file list and secret patterns. Create private OneMore repo, push source, verify remote branch/files and privacy. Preserve local database and backups outside git.
 
 ## Execution record

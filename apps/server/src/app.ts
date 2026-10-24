@@ -18,7 +18,7 @@ import { Mailer, transportFromEnv } from './services/mailer'
 
 const APP_NAME = '算我一个 · OneMore'
 
-type Env = { Variables: { user: User | undefined; ctx: Ctx } }
+type Env = { Variables: { user: User | undefined; ctx: Ctx; membershipGeneration: string | undefined } }
 
 export interface AppDeps {
   store: Store
@@ -47,13 +47,24 @@ export function createApp(deps: AppDeps) {
     const user = users.userFromToken(ctx, token)
     c.set('user', user)
     c.set('ctx', ctx)
+    c.set('membershipGeneration', undefined)
     const path = c.req.path
-    const global = path.startsWith('/api/auth/') || path === '/api/me' || path === '/api/me/recovery-code' || path === '/api/spaces' || path.startsWith('/api/spaces/') || path.startsWith('/api/space-invites/') || path.startsWith('/api/email/unsubscribe/') || path.startsWith('/api/calendar/feed/') || ['/api/health','/api/games','/api/ai/status','/api/email/status'].includes(path)
+    const global =
+      path.startsWith('/api/auth/') ||
+      path === '/api/me' ||
+      path === '/api/me/recovery-code' ||
+      path === '/api/spaces' ||
+      path.startsWith('/api/spaces/') ||
+      path.startsWith('/api/space-invites/') ||
+      path.startsWith('/api/email/unsubscribe/') ||
+      path.startsWith('/api/calendar/feed/') ||
+      ['/api/health', '/api/games', '/api/ai/status', '/api/email/status'].includes(path)
     if (!global) {
       if (!user) throw new AppError(401, 'unauthorized', '请先登录并加入空间')
       const spaceId = c.req.header('X-Space-Id')
       if (!spaceId) throw new AppError(400, 'space_required', '请先选择空间')
-      spaces.requireMember(ctx, user, spaceId)
+      const membership = spaces.requireMember(ctx, user, spaceId)
+      c.set('membershipGeneration', membership.generation)
       c.set('ctx', { ...ctx, store: deps.store.forSpace(spaceId) })
     }
     await next()
@@ -66,11 +77,20 @@ export function createApp(deps: AppDeps) {
   }
   const scoped = (c: Context<Env>): Ctx => c.get('ctx')
   const body = async (c: Context<Env>) => {
+    let input: unknown
     try {
-      return await c.req.json()
+      input = await c.req.json()
     } catch {
-      return {}
+      input = {}
     }
+    // Reading a streamed body yields control: authorization may have been revoked or replaced.
+    const spaceId = scoped(c).store.spaceId
+    if (spaceId) {
+      const membership = spaces.requireMember(ctx, me(c), spaceId)
+      if (membership.generation !== c.get('membershipGeneration'))
+        throw new AppError(403, 'membership_changed', '成员资格已变更，请重新打开页面')
+    }
+    return input
   }
   const ip = (c: Context<Env>) => c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
 
@@ -105,17 +125,21 @@ export function createApp(deps: AppDeps) {
   app.get('/api/users/:handle', (c) => c.json({ user: users.publicProfile(scoped(c), c.req.param('handle')) }))
 
   // ---------- 空间 ----------
-  app.get('/api/spaces', c => c.json({ spaces: ctx.store.listSpaces(me(c).id) }))
-  app.post('/api/spaces', async c => c.json(spaces.createSpace(ctx, me(c), await body(c))))
-  app.get('/api/spaces/:id/members', c => c.json(spaces.memberList(ctx, me(c), c.req.param('id'))))
-  app.post('/api/spaces/:id/invite', c => c.json(spaces.rotateInvite(ctx, me(c), c.req.param('id'))))
-  app.get('/api/space-invites/:token', c => c.json(spaces.invitePreview(ctx, c.req.param('token'), c.get('user'))))
-  app.post('/api/space-invites/:token/requests', c => c.json(spaces.requestJoin(ctx, me(c), c.req.param('token'))))
-  app.get('/api/spaces/:id/requests', c => c.json(spaces.requests(ctx, me(c), c.req.param('id'))))
-  app.post('/api/spaces/:id/requests/:request/approve', c => c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), true)))
-  app.post('/api/spaces/:id/requests/:request/reject', c => c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), false)))
-  app.post('/api/spaces/:id/leave', c => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), me(c).id)))
-  app.delete('/api/spaces/:id/members/:user', c => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), c.req.param('user'))))
+  app.get('/api/spaces', (c) => c.json({ spaces: ctx.store.listSpaces(me(c).id) }))
+  app.post('/api/spaces', async (c) => c.json(spaces.createSpace(ctx, me(c), await body(c))))
+  app.get('/api/spaces/:id/members', (c) => c.json(spaces.memberList(ctx, me(c), c.req.param('id'))))
+  app.post('/api/spaces/:id/invite', (c) => c.json(spaces.rotateInvite(ctx, me(c), c.req.param('id'))))
+  app.get('/api/space-invites/:token', (c) => c.json(spaces.invitePreview(ctx, c.req.param('token'), c.get('user'))))
+  app.post('/api/space-invites/:token/requests', (c) => c.json(spaces.requestJoin(ctx, me(c), c.req.param('token'))))
+  app.get('/api/spaces/:id/requests', (c) => c.json(spaces.requests(ctx, me(c), c.req.param('id'))))
+  app.post('/api/spaces/:id/requests/:request/approve', (c) =>
+    c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), true)),
+  )
+  app.post('/api/spaces/:id/requests/:request/reject', (c) =>
+    c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), false)),
+  )
+  app.post('/api/spaces/:id/leave', (c) => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), me(c).id)))
+  app.delete('/api/spaces/:id/members/:user', (c) => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), c.req.param('user'))))
 
   // ---------- 好友与圈子 ----------
   app.get('/api/friends', (c) => c.json(social.listFriends(scoped(c), me(c))))
@@ -156,15 +180,42 @@ export function createApp(deps: AppDeps) {
     const result = fn(c, user, code, await body(c))
     return c.json({ ...(typeof result === 'object' && result ? result : {}), view: events.getEventView(scoped(c), code, user) })
   }
-  app.put('/api/events/:code/response', action((c, u, code, input) => events.respond(scoped(c), u, code, input)))
-  app.post('/api/events/:code/withdraw', action((c, u, code) => events.withdraw(scoped(c), u, code)))
-  app.post('/api/events/:code/final-confirm', action((c, u, code) => events.finalConfirm(scoped(c), u, code)))
-  app.post('/api/events/:code/confirm', action((c, u, code, input) => events.confirmEvent(scoped(c), u, code, input)))
-  app.post('/api/events/:code/promote', action((c, u, code, input) => events.promoteWaitlist(scoped(c), u, code, input)))
-  app.post('/api/events/:code/reopen', action((c, u, code) => events.reopenEvent(scoped(c), u, code)))
-  app.post('/api/events/:code/cancel', action((c, u, code, input) => events.cancelEvent(scoped(c), u, code, input)))
-  app.post('/api/events/:code/invite', action((c, u, code, input) => events.inviteMore(scoped(c), u, code, input)))
-  app.post('/api/events/:code/slots', action((c, u, code, input) => events.addSlots(scoped(c), u, code, input)))
+  app.put(
+    '/api/events/:code/response',
+    action((c, u, code, input) => events.respond(scoped(c), u, code, input)),
+  )
+  app.post(
+    '/api/events/:code/withdraw',
+    action((c, u, code) => events.withdraw(scoped(c), u, code)),
+  )
+  app.post(
+    '/api/events/:code/final-confirm',
+    action((c, u, code) => events.finalConfirm(scoped(c), u, code)),
+  )
+  app.post(
+    '/api/events/:code/confirm',
+    action((c, u, code, input) => events.confirmEvent(scoped(c), u, code, input)),
+  )
+  app.post(
+    '/api/events/:code/promote',
+    action((c, u, code, input) => events.promoteWaitlist(scoped(c), u, code, input)),
+  )
+  app.post(
+    '/api/events/:code/reopen',
+    action((c, u, code) => events.reopenEvent(scoped(c), u, code)),
+  )
+  app.post(
+    '/api/events/:code/cancel',
+    action((c, u, code, input) => events.cancelEvent(scoped(c), u, code, input)),
+  )
+  app.post(
+    '/api/events/:code/invite',
+    action((c, u, code, input) => events.inviteMore(scoped(c), u, code, input)),
+  )
+  app.post(
+    '/api/events/:code/slots',
+    action((c, u, code, input) => events.addSlots(scoped(c), u, code, input)),
+  )
 
   // ---------- 我想玩 ----------
   app.get('/api/interests', (c) => c.json(interests.listInterests(scoped(c), me(c))))
@@ -188,7 +239,9 @@ export function createApp(deps: AppDeps) {
   app.get('/api/email/unsubscribe/:token', (c) => {
     try {
       const addr = email.unsubscribe(scoped(c), c.req.param('token'))
-      return c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:420px;margin:60px auto;padding:0 20px;color:#1f1f1f"><div style="color:#ff2b2b;font-weight:800">算我一个 · OneMore</div><h2>已退订</h2><p style="color:#6b6b6b">${addr.replace(/[<>&"]/g, '')} 之后不会再收到任何邮件。想重新接收，在 App 的“我”里重新验证邮箱即可。</p></body>`)
+      return c.html(
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:420px;margin:60px auto;padding:0 20px;color:#1f1f1f"><div style="color:#ff2b2b;font-weight:800">算我一个 · OneMore</div><h2>已退订</h2><p style="color:#6b6b6b">${addr.replace(/[<>&"]/g, '')} 之后不会再收到任何邮件。想重新接收，在 App 的“我”里重新验证邮箱即可。</p></body>`,
+      )
     } catch {
       return c.html('<!doctype html><meta charset="utf-8"><p>退订链接无效。</p>', 404)
     }
