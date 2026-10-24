@@ -9,6 +9,7 @@ import { makePageUrl } from '../lib/pageUrl'
 import { toastError } from '../lib/ui'
 import { Button, Sheet, cx } from './ui'
 import { Logo } from './Logo'
+import { EventLinkJoin } from './EventLinkJoin'
 import { FAINT, INK, Icon, type IconName } from './Icon'
 
 const PAGE_TITLES: Record<string, string> = {
@@ -127,10 +128,16 @@ export function Page(props: PropsWithChildren<{ nav?: NavKey; footer?: ReactNode
         <View className='empty space-gate'>
           <Logo size='lg' />
           <View className='space-gate__tagline'>{t('把「下次一定」变成这次。')}</View>
-          <View className='h2'>{denied ? t('无法访问这个空间') : t('先选择一个空间')}</View>
-          <View className='muted mt12'>
-            {denied ? t('活动仅向已加入该空间的成员开放。') : t('每个空间的朋友、活动和通知独立。创建空间，或通过朋友的邀请链接申请加入。')}
-          </View>
+          {denied && router.params.code ? (
+            <EventLinkJoin spaceId={linked!} code={String(router.params.code)} />
+          ) : (
+            <>
+              <View className='h2'>{denied ? t('无法访问这个空间') : t('先选择一个空间')}</View>
+              <View className='muted mt12'>
+                {denied ? t('活动仅向已加入该空间的成员开放。') : t('每个空间的朋友、活动和通知独立。创建空间，或通过朋友的邀请链接加入。')}
+              </View>
+            </>
+          )}
           <Button className='mt16' onClick={() => void Taro.navigateTo({ url: '/pages/spaces/index' })}>
             {t('创建或选择空间')}
           </Button>

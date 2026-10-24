@@ -133,6 +133,13 @@ export function createApp(deps: AppDeps) {
   app.post('/api/spaces/:id/invite', (c) => c.json(spaces.rotateInvite(scoped(c), me(c), c.req.param('id'))))
   app.get('/api/space-invites/:token', (c) => c.json(spaces.invitePreview(scoped(c), c.req.param('token'), c.get('user'))))
   app.post('/api/space-invites/:token/requests', (c) => c.json(spaces.requestJoin(scoped(c), me(c), c.req.param('token'))))
+  app.get('/api/spaces/:id/event-links/:code', (c) => {
+    const { event: _omit, ...preview } = spaces.eventLinkPreview(scoped(c), c.get('user'), c.req.param('id'), c.req.param('code'))
+    return c.json(preview)
+  })
+  app.post('/api/spaces/:id/event-links/:code/join', (c) =>
+    c.json(spaces.joinViaEvent(scoped(c), me(c), c.req.param('id'), c.req.param('code'))),
+  )
   app.get('/api/spaces/:id/requests', (c) => c.json(spaces.requests(scoped(c), me(c), c.req.param('id'))))
   app.post('/api/spaces/:id/requests/:request/approve', (c) =>
     c.json(spaces.decideRequest(scoped(c), me(c), c.req.param('id'), c.req.param('request'), true)),

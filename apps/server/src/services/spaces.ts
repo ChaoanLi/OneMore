@@ -1,4 +1,4 @@
-import { message } from '@couju/core'
+import { message, type Message } from '@couju/core'
 import { z } from 'zod'
 import { deriveStatus, type Space, type SpaceJoinRequest, type User } from '@couju/core'
 import type { Ctx } from './context'
@@ -40,22 +40,60 @@ export function invitePreview(ctx: Ctx, token: string, user?: User) {
     status: user && ctx.store.getMembership(s.id, user.id) ? 'member' : (request?.status ?? null),
   }
 }
+/** 加入空间并通知管理员 */
+function addMember(ctx: Ctx, user: User, spaceId: string, via: Message) {
+  if (ctx.store.listSpaces(user.id).length >= 20) throw badRequest('最多加入20个空间')
+  const space = ctx.store.getSpace(spaceId)
+  if (!space) throw notFound('空间不存在')
+  ctx.store.saveMembership({ spaceId, userId: user.id, role: 'member', joinedAt: ctx.now().toISOString(), emailEnabled: true })
+  notify({ ...ctx, store: ctx.store.forSpace(spaceId) }, space.ownerId, {
+    kind: 'join_request',
+    title: message('{0} 加入了「{1}」', user.nickname, space.name),
+    body: via,
+    link: '/pages/spaces/index',
+    dedupeKey: `joined:${spaceId}:${user.id}`,
+  })
+}
+
+/** 拿到邀请链接就直接加入，不需要管理员批准 */
 export function requestJoin(ctx: Ctx, user: User, token: string) {
   const { space } = invitePreview(ctx, token, user)
-  if (ctx.store.getMembership(space.id, user.id)) return { alreadyMember: true, request: null }
+  if (ctx.store.getMembership(space.id, user.id)) return { alreadyMember: true, joined: false, space, request: null }
   return ctx.store.tx(() => {
+    addMember(ctx, user, space.id, message('通过邀请链接加入'))
     const old = ctx.store.joinRequests(space.id).find((r) => r.userId === user.id)
-    if (old?.status === 'pending' || (old?.status === 'approved' && ctx.store.getMembership(space.id, user.id))) return { request: old }
     const request: SpaceJoinRequest = {
       id: old?.id ?? newId('jr'),
       spaceId: space.id,
       userId: user.id,
-      status: 'pending',
+      status: 'approved',
       createdAt: ctx.now().toISOString(),
     }
     ctx.store.saveJoinRequest(request)
-    return { request }
+    return { alreadyMember: false, joined: true, space, request }
   })
+}
+
+/** 局的链接：看它属于哪个空间、能不能用来加入（仅公开且还在进行的局） */
+export function eventLinkPreview(ctx: Ctx, user: User | undefined, spaceId: string, code: string) {
+  const space = ctx.store.getSpace(spaceId)
+  const event = space ? ctx.store.forSpace(spaceId).getEventByCode(code) : undefined
+  if (!space || !event) throw notFound('链接已失效')
+  const status = deriveStatus(event, ctx.now())
+  return {
+    space: { id: space.id, name: space.name },
+    member: !!user && !!ctx.store.getMembership(spaceId, user.id),
+    joinable: event.visibility === 'link' && (status === 'open' || status === 'confirmed'),
+    event,
+  }
+}
+
+export function joinViaEvent(ctx: Ctx, user: User, spaceId: string, code: string) {
+  const p = eventLinkPreview(ctx, user, spaceId, code)
+  if (p.member) return { space: p.space, joined: false }
+  if (!p.joinable) throw forbidden('这局的链接不能用来加入组，请找组里的人要邀请链接', 'not_joinable')
+  ctx.store.tx(() => addMember(ctx, user, spaceId, message('通过「{0}」的链接加入', p.event.title)))
+  return { space: p.space, joined: true }
 }
 export function decideRequest(ctx: Ctx, user: User, id: string, requestId: string, approve: boolean) {
   requireOwner(ctx, user, id)

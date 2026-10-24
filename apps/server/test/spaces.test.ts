@@ -121,7 +121,7 @@ describe('独立空间授权', () => {
     expect((await call('GET', `/api/spaces/${id}/members`, b.token)).status).toBe(403)
     expect((await call('GET', '/api/me', b.token)).data.spaces).toEqual([])
   })
-  it('申请批准后才加入，更换链接和非管理员管理均受限制', async () => {
+  it('拿到邀请链接直接加入并通知管理员；更换链接后旧链接失效；非管理员不能管理', async () => {
     const a = await guest('A'),
       b = await guest('B'),
       c = await guest('C')
@@ -129,14 +129,45 @@ describe('独立空间授权', () => {
     const old = (await call('POST', `/api/spaces/${id}/invite`, a.token)).data.token
     const req = await call('POST', `/api/space-invites/${old}/requests`, b.token)
     expect(req.status).toBe(200)
-    expect((await call('GET', '/api/events', b.token, id)).status).toBe(403)
-    expect((await call('POST', `/api/spaces/${id}/requests/${req.data.request.id}/approve`, b.token)).status).toBe(403)
+    expect(req.data).toMatchObject({ joined: true, space: { id, name: 'A空间' } })
+    expect((await call('GET', '/api/events', b.token, id)).status).toBe(200)
+    expect((await call('POST', `/api/space-invites/${old}/requests`, b.token)).data.alreadyMember).toBe(true)
+    const notes = (await call('GET', '/api/notifications', a.token, id)).data.items
+    expect(notes.filter((n: any) => n.kind === 'join_request' && n.title.includes('B'))).toHaveLength(1)
+    expect((await call('POST', `/api/spaces/${id}/invite`, b.token)).status).toBe(403)
     await call('POST', `/api/spaces/${id}/invite`, a.token)
     expect((await call('POST', `/api/space-invites/${old}/requests`, c.token)).status).toBe(404)
-    expect((await call('POST', `/api/spaces/${id}/requests/${req.data.request.id}/approve`, a.token)).status).toBe(200)
-    expect((await call('POST', `/api/spaces/${id}/requests/${req.data.request.id}/approve`, a.token)).status).toBe(200)
-    expect((await call('GET', '/api/events', b.token, id)).status).toBe(200)
+    expect((await call('GET', '/api/events', c.token, id)).status).toBe(403)
     expect((await call('POST', `/api/spaces/${id}/leave`, a.token)).status).toBe(400)
+  })
+  it('打开公开局的链接直接加入这个局所在的组；私密局、取消的局、错误的链接都不行', async () => {
+    const a = await guest('A'),
+      b = await guest('B'),
+      c = await guest('C')
+    const id = await space(a.token, 'A空间')
+    const open = (await call('POST', '/api/events', a.token, id, { ...eventBody, title: '公开局' })).data.code
+    const cancelled = (await call('POST', '/api/events', a.token, id, { ...eventBody, title: '取消局' })).data.code
+    await call('POST', `/api/events/${cancelled}/cancel`, a.token, id, { reason: '' })
+    // 预览只给组名，不泄露局的标题
+    const preview = await call('GET', `/api/spaces/${id}/event-links/${open}`)
+    expect(preview.data).toEqual({ space: { id, name: 'A空间' }, member: false, joinable: true })
+    expect((await call('GET', `/api/spaces/${id}/event-links/wrongcode`)).status).toBe(404)
+    expect((await call('POST', `/api/spaces/${id}/event-links/${open}/join`)).status).toBe(401)
+    expect((await call('POST', `/api/spaces/${id}/event-links/${cancelled}/join`, b.token)).status).toBe(403)
+    const j = await call('POST', `/api/spaces/${id}/event-links/${open}/join`, b.token)
+    expect(j.data).toEqual({ space: { id, name: 'A空间' }, joined: true })
+    expect((await call('GET', `/api/events/${open}`, b.token, id)).status).toBe(200)
+    expect((await call('POST', `/api/spaces/${id}/event-links/${open}/join`, b.token)).data.joined).toBe(false)
+    const notes = (await call('GET', '/api/notifications', a.token, id)).data.items
+    expect(notes.some((n: any) => n.kind === 'join_request' && n.body.includes('公开局'))).toBe(true)
+    // 私密局的链接不能进组
+    await call('POST', '/api/friends', a.token, id, { handle: b.user.handle })
+    await call('POST', `/api/friends/${a.user.id}/accept`, b.token, id)
+    const secret = (
+      await call('POST', '/api/events', a.token, id, { ...eventBody, title: '私密', visibility: 'invited', invite: { userIds: [b.user.id], circleIds: [] } })
+    ).data.code
+    expect((await call('GET', `/api/spaces/${id}/event-links/${secret}`, c.token)).data.joinable).toBe(false)
+    expect((await call('POST', `/api/spaces/${id}/event-links/${secret}/join`, c.token)).status).toBe(403)
   })
   it('共同成员的活动与通知隔离，外空间及匿名链接不泄露任何标题', async () => {
     const a = await guest('A'),

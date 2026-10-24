@@ -33,7 +33,8 @@ export default function EventDetail() {
   useLocale()
   const router = useRouter()
   const code = String(router.params.code ?? '')
-  const { user } = useSession()
+  const session = useSession()
+  const { user } = session
   const [view, setView] = useState<EventView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(router.params.created === '1')
@@ -42,6 +43,7 @@ export default function EventDetail() {
   const [inviteSheet, setInviteSheet] = useState(false)
   const [emailSheet, setEmailSheet] = useState(false)
   const [editSheet, setEditSheet] = useState(false)
+  const [joinedSpace] = useState(router.params.joined === '1')
 
   const load = async () => {
     await bootSession()
@@ -62,6 +64,9 @@ export default function EventDetail() {
     // 分享弹层只在刚创建时自动弹一次：去掉地址里的 created=1，刷新后不再弹
     if (isH5 && router.params.created === '1' && typeof window !== 'undefined') {
       window.history.replaceState(window.history.state, '', window.location.href.replace(/[&?]created=1/, ''))
+    }
+    if (isH5 && router.params.joined === '1' && typeof window !== 'undefined') {
+      window.history.replaceState(window.history.state, '', window.location.href.replace(/[&?]joined=1/, ''))
     }
   }, [])
   useEffect(() => {
@@ -159,6 +164,15 @@ export default function EventDetail() {
         {event.location && <View className='sub mt4'>📍 {event.location}</View>}
         {!view.restricted && <WhoIsIn view={view} />}
       </View>
+
+      {joinedSpace && (
+        <Card tone='info' className='mt16'>
+          <View className='bold'>
+            {t('你已通过这局的链接加入「{0}」', session.spaces.find((x) => x.id === session.activeSpace)?.name ?? '')}
+          </View>
+          <View className='sub mt4'>{t('组里的局和朋友现在都能看到了，组长也收到了通知。')}</View>
+        </Card>
+      )}
 
       {view.restricted ? (
         <Card tone='warn' className='mt16'>

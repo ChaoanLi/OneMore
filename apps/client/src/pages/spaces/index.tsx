@@ -23,6 +23,7 @@ export default function Spaces() {
   const [requests, setRequests] = useState<Request[]>([])
   const [link, setLink] = useState('')
   const [busy, setBusy] = useState(false)
+  const [justJoined, setJustJoined] = useState(false)
   async function run(fn: () => Promise<void>) {
     if (busy) return
     setBusy(true)
@@ -35,13 +36,27 @@ export default function Spaces() {
     }
   }
   async function loadPreview(token = invite) {
-    if (token) setPreview(await get(`/api/space-invites/${encodeURIComponent(token)}`))
+    if (!token) return null
+    const p = await get<{ space: { id: string; name: string }; status: string | null }>(`/api/space-invites/${encodeURIComponent(token)}`)
+    setPreview(p)
+    return p
+  }
+  /** 邀请链接直接加入，组长会收到通知 */
+  async function joinInvite(token = invite) {
+    if (!(await requireUser('先告诉大家你是谁，再加入组'))) return
+    const r = await post<{ joined: boolean }>(`/api/space-invites/${encodeURIComponent(token)}/requests`)
+    await refreshSpaces()
+    setJustJoined(r.joined)
+    await loadPreview(token)
   }
   useLocaleDidShow(() => {
     void bootSession()
       .then(async () => {
         if (getSession().user) await refreshSpaces()
-        if (params.invite) await loadPreview(params.invite)
+        if (!params.invite) return
+        const p = await loadPreview(params.invite)
+        // 已经有身份的人打开邀请链接就直接加入
+        if (p && p.status !== 'member' && getSession().user) await joinInvite(params.invite)
       })
       .catch(toastError)
   })
@@ -134,7 +149,7 @@ export default function Spaces() {
       </Card>
       <Card className='mt16'>
         <View className='h2'>{t('通过邀请加入')}</View>
-        <View className='muted mt8'>{t('提交申请后，等待空间管理员批准。活动链接不能直接加入空间。')}</View>
+        <View className='muted mt8'>{t('打开朋友发来的邀请链接或局的链接，就能直接加入。')}</View>
         <Input
           className='input mt12'
           placeholder={t('粘贴空间邀请链接或邀请码')}
@@ -162,15 +177,14 @@ export default function Spaces() {
             <View className='h2'>{preview.space.name}</View>
             <View className='muted mt8'>
               {preview.status === 'member'
-                ? t('你已加入这个空间。')
-                : preview.status === 'pending'
-                  ? t('申请已提交，等待管理员批准。')
-                  : preview.status === 'rejected'
-                    ? t('上次申请未通过，可重新申请。')
-                    : t('管理员批准后才能查看成员和活动。')}
+                ? justJoined
+                  ? t('✓ 你已加入「{0}」，组长已收到通知。', preview.space.name)
+                  : t('你已加入这个空间。')
+                : t('点一下就能加入，组长会收到通知。')}
             </View>
             {preview.status === 'member' ? (
               <Button
+                kind='primary'
                 className='mt12'
                 onClick={() =>
                   void run(async () => {
@@ -182,48 +196,23 @@ export default function Spaces() {
                 {t('进入空间')}
               </Button>
             ) : (
-              <Button
-                kind='primary'
-                className='mt12'
-                disabled={busy || preview.status === 'pending'}
-                onClick={() =>
-                  void run(async () => {
-                    if (!(await requireUser('先登录，再申请加入'))) return
-                    await post(`/api/space-invites/${encodeURIComponent(invite)}/requests`)
-                    await loadPreview()
-                    toastOk(t('申请已提交'))
-                  })
-                }
-              >
-                {t('申请加入')}
+              <Button kind='primary' className='mt12' disabled={busy} onClick={() => void run(() => joinInvite())}>
+                {t('加入「{0}」', preview.space.name)}
               </Button>
             )}
-            <Button
-              kind='ghost'
-              className='mt12'
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  if (getSession().user) await refreshSpaces()
-                  await loadPreview()
-                })
-              }
-            >
-              {t('刷新申请状态')}
-            </Button>
           </View>
         )}
       </Card>
       {manage && ownerSpace && (
         <Card className='mt24'>
           <View className='h2'>{t('管理：{0}', ownerSpace.name)}</View>
-          <View className='muted mt8'>{t('邀请链接只能提交申请。更换链接后，之前的链接立即失效。')}</View>
+          <View className='muted mt8'>{t('拿到链接的人可以直接加入。更换链接后，之前的链接立即失效。')}</View>
           <Button
             className='mt12'
             disabled={busy}
             onClick={() =>
               void run(async () => {
-                if (!(await confirm(t('生成新的空间邀请链接？'), t('之前的邀请链接将失效，已经提交的申请仍可处理。'), t('生成链接'))))
+                if (!(await confirm(t('生成新的空间邀请链接？'), t('之前的邀请链接将失效。'), t('生成链接'))))
                   return
                 const r = await post<{ path: string }>(`/api/spaces/${manage}/invite`)
                 const url = appUrl(r.path)
