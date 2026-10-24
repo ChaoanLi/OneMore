@@ -12,6 +12,7 @@ import {
   isValidTimeZone,
   MAX_SLOTS,
   deriveStatus,
+  editEventSchema,
   describeProgress,
   evaluateCombo,
   evaluateEvent,
@@ -691,6 +692,52 @@ export function addSlots(ctx: Ctx, me: User, code: string, raw: unknown): void {
     if (event.status === 'expired') event.status = 'open'
     event.updatedAt = ctx.now().toISOString()
     ctx.store.saveEvent(event)
+  })
+}
+
+/** 发起人编辑局。改了地点、线上线下或删了时间，会通知已经回过话的人。 */
+export function editEvent(ctx: Ctx, me: User, code: string, raw: unknown): void {
+  const input = editEventSchema.parse(raw)
+  ctx.store.tx(() => {
+    const event = loadEvent(ctx, code)
+    ensure(event, 'edit', me)
+    const remove = new Set(input.removeSlotIds)
+    if (remove.size > 0) {
+      if (event.status !== 'open') throw badRequest('成团后时间就定了；要改时间，先重新开放报名', 'invalid_state')
+      if ([...remove].some((id) => !event.slots.some((s) => s.id === id))) throw badRequest('时段不存在')
+      if (event.slots.every((s) => remove.has(s.id))) throw badRequest('至少留一个时间')
+    }
+    const placeChanged =
+      (input.mode !== undefined && input.mode !== event.mode) || (input.location !== undefined && input.location !== event.location)
+    const next: GameEvent = {
+      ...event,
+      title: input.title ?? event.title,
+      note: input.note ?? event.note,
+      mode: input.mode ?? event.mode,
+      location: input.location ?? event.location,
+      slots: event.slots.filter((s) => !remove.has(s.id)),
+      updatedAt: ctx.now().toISOString(),
+    }
+    const responses = ctx.store.listResponses(event.id)
+    if (remove.size > 0) {
+      for (const r of responses) {
+        if (!Object.keys(r.availability).some((k) => remove.has(k))) continue
+        const availability = Object.fromEntries(Object.entries(r.availability).filter(([k]) => !remove.has(k)))
+        ctx.store.saveResponse({ ...r, availability })
+      }
+    }
+    ctx.store.saveEvent(next)
+    if (!placeChanged && remove.size === 0) return
+    for (const r of responses) {
+      if (r.intent === 'declined' || r.userId === event.hostId) continue
+      notify(ctx, r.userId, {
+        kind: 'event_updated',
+        title: message('「{0}」有改动', next.title),
+        body: message('{0} 改了时间或地点，点进来看看还合不合适', me.nickname),
+        link: eventLink(next),
+        dedupeKey: `updated:${event.id}`,
+      })
+    }
   })
 }
 

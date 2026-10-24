@@ -127,6 +127,15 @@ export type RespondInput = z.input<typeof respondSchema>
 
 export const confirmSchema = z.object({ optionId: z.string(), slotId: z.string() })
 export const cancelSchema = z.object({ reason: z.string().trim().max(100).default('') })
+/** 发起人编辑局：只传要改的字段；removeSlotIds 只在招人中可用 */
+export const editEventSchema = z.object({
+  title: z.string().trim().min(1, '标题不能为空').max(40).optional(),
+  note: z.string().trim().max(300).optional(),
+  mode: z.enum(['online', 'offline']).optional(),
+  location: z.string().trim().max(80).optional(),
+  removeSlotIds: z.array(z.string()).max(MAX_SLOTS).default([]),
+})
+export type EditEventInput = z.input<typeof editEventSchema>
 export const addSlotsSchema = z.object({ slots: z.array(slotInputSchema).min(1).max(MAX_SLOTS) })
 export const promoteSchema = z.object({ userId: z.string() })
 

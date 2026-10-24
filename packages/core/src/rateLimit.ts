@@ -20,6 +20,7 @@ export const DEFAULT_RULES: Record<NotificationKind, RateRule> = {
   event_ready: { dailyMax: 10, dedupeWindowMs: 6 * HOUR },
   event_confirmed: { dailyMax: 20, dedupeWindowMs: 1 * HOUR },
   event_cancelled: { dailyMax: 20, dedupeWindowMs: 1 * HOUR },
+  event_updated: { dailyMax: 10, dedupeWindowMs: 1 * HOUR },
   event_short: { dailyMax: 2, dedupeWindowMs: 24 * HOUR },
   waitlist_promoted: { dailyMax: 10, dedupeWindowMs: 1 * HOUR },
   interest_changed: { dailyMax: 10, dedupeWindowMs: 24 * HOUR },

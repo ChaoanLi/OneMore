@@ -17,6 +17,7 @@ const ICON: Record<AppNotification['kind'], string> = {
   event_confirmed: '🎉',
   event_cancelled: '🫥',
   event_short: '🙏',
+  event_updated: '✏️',
   waitlist_promoted: '🎟️',
   interest_changed: '🔔',
   interest_new: '🙋',

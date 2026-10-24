@@ -656,3 +656,66 @@ describe('我的游戏', () => {
     expect(bad.status).toBe(400)
   })
 })
+
+describe('发起人编辑局与参与者退出', () => {
+  async function openEvent() {
+    const [host, a, b] = await guests('小林', '阿杰', '老王')
+    const { data } = await call<{ code: string }>('POST', '/api/events', host.token, {
+      title: '周六日麻',
+      options: [MAHJONG],
+      slots: [slot(sat), slot(sun)],
+    })
+    await call('PUT', `/api/events/${data.code}/response`, a.token, { intent: 'joined', availability: { s1: 'yes', s2: 'yes' } })
+    return { host, a, b, code: data.code }
+  }
+  const notes = async (token: string) => (await call<{ items: { kind: string }[] }>('GET', '/api/notifications', token)).data.items
+
+  it('发起人能改标题、说明、地点并删掉候选时间；回过话的人收到一次通知', async () => {
+    const { host, a, b, code } = await openEvent()
+    const r = await call('PATCH', `/api/events/${code}`, host.token, {
+      title: '周日日麻',
+      note: '雀魂友人场',
+      mode: 'offline',
+      location: '老王家',
+      removeSlotIds: ['s1'],
+    })
+    expect(r.status).toBe(200)
+    expect(r.data.view.event).toMatchObject({ title: '周日日麻', note: '雀魂友人场', mode: 'offline', location: '老王家' })
+    expect(r.data.view.event.slots.map((s: { id: string }) => s.id)).toEqual(['s2'])
+    expect(r.data.view.viewer.response?.availability ?? {}).not.toHaveProperty('s1')
+    const mine = (await call('GET', `/api/events/${code}`, a.token)).data.viewer.response
+    expect(mine.availability).toEqual({ s2: 'yes' })
+    // 1 小时内再改一次，不重复打扰
+    await call('PATCH', `/api/events/${code}`, host.token, { location: '小林家' })
+    expect((await notes(a.token)).filter((n) => n.kind === 'event_updated')).toHaveLength(1)
+    expect((await notes(b.token)).filter((n) => n.kind === 'event_updated')).toHaveLength(0)
+  })
+
+  it('只改标题不发通知；非发起人不能改；不能删光时间', async () => {
+    const { host, a, code } = await openEvent()
+    expect((await call('PATCH', `/api/events/${code}`, host.token, { title: '新标题' })).status).toBe(200)
+    expect((await notes(a.token)).filter((n) => n.kind === 'event_updated')).toHaveLength(0)
+    expect((await call('PATCH', `/api/events/${code}`, a.token, { title: '篡改' })).status).toBe(403)
+    expect((await call('PATCH', `/api/events/${code}`, host.token, { removeSlotIds: ['s1', 's2'] })).status).toBe(400)
+    expect((await call('PATCH', `/api/events/${code}`, host.token, { title: '  ' })).status).toBe(400)
+  })
+
+  it('成团后还能改地点，但不能删时间', async () => {
+    const [host, ...people] = await guests('小林', '阿杰', '老王', 'Kiki')
+    const { data } = await call<{ code: string }>('POST', '/api/events', host.token, { options: [MAHJONG], slots: [slot(sat), slot(sun)] })
+    for (const p of people) await call('PUT', `/api/events/${data.code}/response`, p.token, { intent: 'joined', availability: { s1: 'yes' } })
+    expect((await call('POST', `/api/events/${data.code}/confirm`, host.token, { optionId: 'o1', slotId: 's1' })).status).toBe(200)
+    expect((await call('PATCH', `/api/events/${data.code}`, host.token, { location: '新地点' })).status).toBe(200)
+    expect((await call('PATCH', `/api/events/${data.code}`, host.token, { removeSlotIds: ['s2'] })).status).toBe(400)
+  })
+
+  it('报名后可以退出，退出后从“谁来”里消失，还能重新报名', async () => {
+    const { a, code } = await openEvent()
+    const w = await call('POST', `/api/events/${code}/withdraw`, a.token)
+    expect(w.status).toBe(200)
+    expect(w.data.view.participants.map((p: { user: { id: string } }) => p.user.id)).not.toContain(a.id)
+    expect(w.data.view.viewer.response.intent).toBe('declined')
+    const back = await call('PUT', `/api/events/${code}/response`, a.token, { intent: 'joined', availability: { s2: 'yes' } })
+    expect(back.data.view.participants.map((p: { user: { id: string } }) => p.user.id)).toContain(a.id)
+  })
+})

@@ -252,6 +252,7 @@ export type NotificationKind =
   | 'event_ready'
   | 'event_confirmed'
   | 'event_cancelled'
+  | 'event_updated'
   | 'event_short'
   | 'waitlist_promoted'
   | 'interest_new'

@@ -214,6 +214,10 @@ export function createApp(deps: AppDeps) {
     '/api/events/:code/invite',
     action((c, u, code, input) => events.inviteMore(scoped(c), u, code, input)),
   )
+  app.patch(
+    '/api/events/:code',
+    action((c, u, code, input) => events.editEvent(scoped(c), u, code, input)),
+  )
   app.post(
     '/api/events/:code/slots',
     action((c, u, code, input) => events.addSlots(scoped(c), u, code, input)),

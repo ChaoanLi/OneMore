@@ -21,7 +21,7 @@ import { Page } from '../../components/Page'
 import { SlotCalendar } from '../../components/SlotCalendar'
 import { SlotEditor } from '../../components/SlotEditor'
 import { Avatar, AvatarStack, Button, Card, Chip, Empty, Loading, Progress, SectionTitle, Sheet, Tag, cx } from '../../components/ui'
-import { ApiError, get, post, put } from '../../lib/api'
+import { ApiError, get, patch, post, put } from '../../lib/api'
 import { bootSession, requireUser, useSession } from '../../lib/session'
 import { isWeekendLocalDate } from '../../lib/localeCalendar'
 import { APP_NAME } from '../../lib/brand'
@@ -41,6 +41,7 @@ export default function EventDetail() {
   const [slotSheet, setSlotSheet] = useState(false)
   const [inviteSheet, setInviteSheet] = useState(false)
   const [emailSheet, setEmailSheet] = useState(false)
+  const [editSheet, setEditSheet] = useState(false)
 
   const load = async () => {
     await bootSession()
@@ -72,9 +73,10 @@ export default function EventDetail() {
   useShareAppMessage(() => ({ title: shareTitle, path: eventPath(code) }))
 
   /** 发起人/报名者的操作：成功后用服务端返回的最新视图刷新 */
-  const act = async (path: string, body?: unknown, okMsg?: string, method: 'post' | 'put' = 'post') => {
+  const act = async (path: string, body?: unknown, okMsg?: string, method: 'post' | 'put' | 'patch' = 'post') => {
     try {
-      const res = method === 'put' ? await put<ActionResult>(path, body) : await post<ActionResult>(path, body)
+      const res =
+        method === 'put' ? await put<ActionResult>(path, body) : method === 'patch' ? await patch<ActionResult>(path, body) : await post<ActionResult>(path, body)
       setView(res.view)
       if (okMsg) toastOk(okMsg)
       return res
@@ -155,6 +157,7 @@ export default function EventDetail() {
         </View>
         {event.note && <View className='sub mt8'>{event.note}</View>}
         {event.location && <View className='sub mt4'>📍 {event.location}</View>}
+        {!view.restricted && <WhoIsIn view={view} />}
       </View>
 
       {view.restricted ? (
@@ -187,13 +190,25 @@ export default function EventDetail() {
             <Card tone='info' className='mt12'>
               <View className='bold'>{t('你在候补第 {0} 位', (event.final?.waitlistIds.indexOf(user?.id ?? '') ?? 0) + 1)}</View>
               <View className='sub mt4'>{t('有人临时有事，组局的人会叫你补上，到时会通知你。')}</View>
+              <Text
+                className='link small mt8'
+                onClick={async () => {
+                  if (await confirm(t('不排候补了？'), t('之后改主意还能再报名。'), t('不排了')))
+                    await act(`/api/events/${code}/withdraw`, {}, t('已退出候补'))
+                }}
+              >
+                {t('不排了')}
+              </Text>
             </Card>
           )}
           {!showEditor && myResp && !viewer.inRoster && !viewer.inWaitlist && !isHost && (
             <MyResponse
               view={view}
               onEdit={() => setEditing(true)}
-              onWithdraw={() => act(`/api/events/${code}/withdraw`, {}, t('已退出'))}
+              onWithdraw={async () => {
+                if (await confirm(t('退出这局？'), t('组局的人会看到你不来了，之后改主意还能再报名。'), t('确定退出')))
+                  await act(`/api/events/${code}/withdraw`, {}, t('已退出这局'))
+              }}
             />
           )}
           {showEditor && (
@@ -250,6 +265,7 @@ export default function EventDetail() {
               onInvite={() => setInviteSheet(true)}
               onEmail={() => setEmailSheet(true)}
               onShare={() => setShareOpen(true)}
+              onEdit={() => setEditSheet(true)}
             />
           )}
 
@@ -345,6 +361,16 @@ export default function EventDetail() {
         />
       )}
       {isHost && <EmailInviteSheet open={emailSheet} code={code} onClose={() => setEmailSheet(false)} />}
+      {isHost && (
+        <EditEventSheet
+          open={editSheet}
+          view={view}
+          onClose={() => setEditSheet(false)}
+          onSave={async (body) => {
+            if (await act(`/api/events/${code}`, body, t('改好了'), 'patch')) setEditSheet(false)
+          }}
+        />
+      )}
     </Page>
   )
 }
@@ -596,6 +622,13 @@ function MyResponse(props: { view: EventView; onEdit: () => void; onWithdraw: ()
       </View>
       {r.intent === 'joined' && <View className='sub mt4'>{t('可以的时间：{0}', yesSlots.map((s) => s.line).join('；'))}</View>}
       {r.intent === 'joined' && <EmailHint />}
+      {r.intent !== 'declined' && (props.view.event.status === 'open' || props.view.event.status === 'confirmed') && (
+        <View className='mt8'>
+          <Text className='muted small' onClick={props.onWithdraw}>
+            {t('退出这局')}
+          </Text>
+        </View>
+      )}
     </Card>
   )
 }
@@ -861,6 +894,7 @@ function HostPanel(props: {
   onInvite: () => void
   onEmail: () => void
   onShare: () => void
+  onEdit: () => void
 }) {
   useLocale()
   const { event, evaluation, hostOnly, rosterCheck } = props.view
@@ -966,6 +1000,14 @@ function HostPanel(props: {
               <Text>{t('发邮件')}</Text>
             </View>
           )}
+          {live && (
+            <View className='tool' onClick={props.onEdit}>
+              <View className='icon-btn'>
+                <Icon name='edit' />
+              </View>
+              <Text>{t('编辑')}</Text>
+            </View>
+          )}
           {(event.status === 'open' || event.status === 'expired') && (
             <View className='tool' onClick={props.onAddSlots}>
               <View className='icon-btn'>
@@ -997,7 +1039,123 @@ function HostPanel(props: {
   )
 }
 
+/** 标题下方一眼看到谁已经要来 */
+function WhoIsIn({ view }: { view: EventView }) {
+  useLocale()
+  const joined = view.participants.filter((p) => p.intent === 'joined')
+  const maybe = view.participants.filter((p) => p.intent === 'maybe').length
+  if (joined.length === 0) {
+    if (view.viewer.role === 'host' || view.event.status !== 'open') return null
+    return <View className='sub mt12'>{t('还没人报名，你来当第一个？')}</View>
+  }
+  const sep = getLocale() === 'en' ? ', ' : '、'
+  const names = joined.slice(0, 4).map((p) => p.user.nickname).join(sep) + (joined.length > 4 ? '…' : '')
+  return (
+    <View className='row gap8 mt12'>
+      <AvatarStack users={joined.map((p) => p.user)} max={6} />
+      <Text className='sub flex1'>
+        {t('已经有 {0} 人要来：{1}', joined.length, names)}
+        {maybe > 0 ? t('，{0} 人看情况', maybe) : ''}
+      </Text>
+    </View>
+  )
+}
+
 // ---------------- 弹层 ----------------
+function EditEventSheet(props: {
+  open: boolean
+  view: EventView
+  onClose: () => void
+  onSave: (body: { title: string; note: string; mode: 'online' | 'offline'; location: string; removeSlotIds: string[] }) => void
+}) {
+  useLocale()
+  const { event } = props.view
+  const [title, setTitle] = useState(event.title)
+  const [note, setNote] = useState(event.note)
+  const [offline, setOffline] = useState(event.mode === 'offline')
+  const [location, setLocation] = useState(event.location)
+  const [removed, setRemoved] = useState<string[]>([])
+  useEffect(() => {
+    // 每次打开都从当前内容开始
+    if (!props.open) return
+    setTitle(event.title)
+    setNote(event.note)
+    setOffline(event.mode === 'offline')
+    setLocation(event.location)
+    setRemoved([])
+  }, [props.open])
+  const canEditSlots = event.status === 'open'
+  const left = event.slots.filter((s) => !removed.includes(s.id)).length
+  return (
+    <Sheet open={props.open} onClose={props.onClose} title={t('编辑这局')}>
+      <View className='field__label mt12'>{t('标题')}</View>
+      <Input className='input' maxlength={40} value={title} onInput={(e) => setTitle(e.detail.value)} />
+      <Textarea
+        className='textarea mt8'
+        placeholder={t('备注，比如：雀魂友人场')}
+        maxlength={300}
+        value={note}
+        onInput={(e) => setNote(e.detail.value)}
+      />
+      <View className='switch-row mt8'>
+        <Text>{t('线下见面')}</Text>
+        <Switch color='#FF2B2B' checked={offline} onChange={(e) => setOffline(e.detail.value)} />
+      </View>
+      {offline && (
+        <Input
+          className='input'
+          placeholder={t('地点（可以之后再定）')}
+          maxlength={80}
+          value={location}
+          onInput={(e) => setLocation(e.detail.value)}
+        />
+      )}
+      {canEditSlots ? (
+        <>
+          <View className='field__label mt12'>{t('候选时间（点 × 删掉，加时间用“加时间”）')}</View>
+          {event.slots.map((s) => {
+            const gone = removed.includes(s.id)
+            return (
+              <View key={s.id} className='row row--between mt8'>
+                <Text className={cx(gone ? 'muted' : 'sub')} style={gone ? { textDecoration: 'line-through' } : undefined}>
+                  {s.line}
+                </Text>
+                {gone ? (
+                  <Text className='link small' onClick={() => setRemoved(removed.filter((x) => x !== s.id))}>
+                    {t('撤销')}
+                  </Text>
+                ) : (
+                  <Icon name='x' onClick={() => left > 1 && setRemoved([...removed, s.id])} />
+                )}
+              </View>
+            )
+          })}
+        </>
+      ) : (
+        <View className='muted mt12'>{t('成团后时间就定了；要改时间，先重新开放报名')}</View>
+      )}
+      <View className='muted mt12'>{t('改了地点或时间，会通知已经报名的人。')}</View>
+      <Button
+        kind='primary'
+        block
+        className='mt16'
+        disabled={!title.trim()}
+        onClick={() =>
+          props.onSave({
+            title: title.trim(),
+            note: note.trim(),
+            mode: offline ? 'offline' : 'online',
+            location: offline ? location.trim() : '',
+            removeSlotIds: removed,
+          })
+        }
+      >
+        {t('保存')}
+      </Button>
+    </Sheet>
+  )
+}
+
 
 function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView; created: boolean }) {
   useLocale()

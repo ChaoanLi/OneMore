@@ -21,6 +21,7 @@ export type EventAction =
   | 'final_confirm'
   | 'withdraw'
   | 'promote'
+  | 'edit'
 
 export type ActorRole = 'host' | 'participant'
 
@@ -32,6 +33,7 @@ const RULES: Record<EventStatus, Partial<Record<EventAction, ActorRole[]>>> = {
     invite: ['host'],
     add_slots: ['host'],
     withdraw: ['participant'],
+    edit: ['host'],
   },
   confirmed: {
     respond: ['participant'],
@@ -41,6 +43,7 @@ const RULES: Record<EventStatus, Partial<Record<EventAction, ActorRole[]>>> = {
     cancel: ['host'],
     reopen: ['host'],
     invite: ['host'],
+    edit: ['host'],
   },
   expired: {
     add_slots: ['host'],

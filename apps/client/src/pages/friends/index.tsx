@@ -2,7 +2,7 @@ import { t, useLocale, getLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Input, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useState } from 'react'
-import { zoneLabel, type CirclesResponse, type FriendsResponse } from '@couju/core'
+import { zoneLabel, type CirclesResponse, type FriendsResponse, type PublicUser } from '@couju/core'
 import { FAINT, Icon, RED } from '../../components/Icon'
 import { Page } from '../../components/Page'
 import { APP_NAME } from '../../lib/brand'
@@ -19,6 +19,33 @@ export default function Friends() {
   const [circles, setCircles] = useState<CirclesResponse['circles']>([])
   const [handle, setHandle] = useState('')
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState<string[]>([])
+
+  /** 给组里的人发好友请求；对方先加过我时直接成为好友 */
+  const addMates = async (mates: PublicUser[]) => {
+    if (mates.length === 0) return
+    setAdding(mates.map((u) => u.id))
+    let accepted = 0
+    try {
+      for (const u of mates) {
+        const r = await post<{ status: string }>('/api/friends', { handle: u.handle })
+        if (r.status === 'accepted') accepted++
+      }
+      const one = mates[0]!
+      toast(
+        mates.length === 1
+          ? accepted
+            ? t('你和 {0} 已是好友', one.nickname)
+            : t('已向 {0} 发送请求', one.nickname)
+          : t('已向 {0} 人发送请求', mates.length),
+      )
+    } catch (e) {
+      toastError(e)
+    } finally {
+      setAdding([])
+      void load()
+    }
+  }
 
   const load = async () => {
     await bootSession()
@@ -146,6 +173,38 @@ export default function Friends() {
                   }}
                 >
                   {t('先不了')}
+                </Button>
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+
+      {data && data.groupMates.length > 0 && (
+        <>
+          <SectionTitle
+            title={t('组里的人（{0}）', data.groupMates.length)}
+            extra={
+              data.groupMates.length > 1 ? (
+                <Text className='link small' onClick={() => adding.length === 0 && void addMates(data.groupMates)}>
+                  {t('全部加好友')}
+                </Text>
+              ) : undefined
+            }
+          />
+          <Card>
+            <View className='muted'>{t('同组还不是好友的人，点一下就能加。')}</View>
+            {data.groupMates.map((u) => (
+              <View key={u.id} className='list-item'>
+                <Avatar user={u} />
+                <View className='flex1'>
+                  <View className='bold'>{u.nickname}</View>
+                  <View className='muted'>
+                    {u.handle} · {zoneLabel(u.timezone, getLocale())}
+                  </View>
+                </View>
+                <Button size='sm' kind='primary' loading={adding.includes(u.id)} onClick={() => void addMates([u])}>
+                  {t('加好友')}
                 </Button>
               </View>
             ))}

@@ -108,6 +108,8 @@ export interface FriendsResponse {
   friends: FriendEntry[]
   incoming: PublicUser[]
   outgoing: PublicUser[]
+  /** 同空间里和我还没有任何好友关系（含待处理请求）的人 */
+  groupMates: PublicUser[]
 }
 
 export interface AuthResponse {

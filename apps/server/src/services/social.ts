@@ -36,7 +36,13 @@ export function listFriends(ctx: Ctx, me: User) {
     else incoming.push(toPublic(u))
   }
   friends.sort((x, y) => Number(y.favorite) - Number(x.favorite) || x.user.nickname.localeCompare(y.user.nickname, 'zh'))
-  return { friends, incoming, outgoing }
+  const related = new Set([me.id, ...all.map(otherId)])
+  const mateIds = ctx.store.members().map((m) => m.userId).filter((id) => !related.has(id))
+  const groupMates = ctx.store
+    .getUsers(mateIds)
+    .map(toPublic)
+    .sort((x, y) => x.nickname.localeCompare(y.nickname, 'zh'))
+  return { friends, incoming, outgoing, groupMates }
 }
 
 /** 发送好友请求；如果对方已经向我发过请求，则直接成为好友。 */

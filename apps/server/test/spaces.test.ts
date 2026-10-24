@@ -184,6 +184,28 @@ describe('独立空间授权', () => {
     expect(cal).toContain('全组可见')
     expect(cal).not.toContain('只邀请B')
   })
+  it('朋友页列出同组里还不是好友的人，一键加好友后从列表移走', async () => {
+    const a = await guest('A'),
+      b = await guest('B'),
+      c = await guest('C'),
+      d = await guest('D')
+    const A = await space(a.token, 'A空间'),
+      B = await space(d.token, 'D空间')
+    await join(a.token, b.token, A)
+    await join(a.token, c.token, A)
+    const mates = async (token: string) =>
+      ((await call('GET', '/api/friends', token, A)).data.groupMates as { id: string }[]).map((u) => u.id).sort()
+    expect(await mates(a.token)).toEqual([b.user.id, c.user.id].sort())
+    // 别的组的人不出现
+    expect(await mates(a.token)).not.toContain(d.user.id)
+    expect((await call('POST', '/api/friends', a.token, A, { handle: b.user.handle })).status).toBe(200)
+    // 发出请求后，A 那边 B 进“等对方点头”；B 那边 A 进“有人想加你”
+    expect(await mates(a.token)).toEqual([c.user.id])
+    expect(await mates(b.token)).toEqual([c.user.id])
+    expect((await call('POST', '/api/friends', b.token, A, { handle: a.user.handle })).data.status).toBe('accepted')
+    expect(await mates(b.token)).toEqual([c.user.id])
+    expect((await call('GET', '/api/friends', d.token, B)).data.groupMates).toEqual([])
+  })
   it('同一对人的好友、圈子、想玩和用户搜索按空间独立', async () => {
     const a = await guest('A'),
       b = await guest('B'),
