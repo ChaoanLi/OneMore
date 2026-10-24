@@ -71,7 +71,7 @@
 - [x] Write failing import tests: partial participant sets skipped, dry-run no mutation, repeated apply idempotent and old data remains unavailable.
 - [x] Implement CLI, migration guide and current deployment status documentation without local resource IDs.
 - [x] Run `npm test`, `npm run typecheck`, `npm run build`; inspect final diff and fresh independent code review; fix important findings with regression tests.
-- [ ] Check staged file list and secret patterns. Create private OneMore repo, push source, verify remote branch/files and privacy. Preserve local database and backups outside git.
+- [x] Check staged file list and secret patterns. Create private OneMore repo, push source, verify remote branch/files and privacy. Preserve local database and backups outside git.
 
 ## Execution record
 

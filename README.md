@@ -20,6 +20,8 @@
 
 网站尚未绑定到公网域名；SMTP 与真实 DeepSeek Key 尚未联调。上传 GitHub 不代表已上线。
 
+验证命令、结果及尚未验证的外部服务见 [验证记录](docs/VERIFICATION.md)。
+
 ## 当前状态（如实标注）
 
 | 模块 | 状态 |
@@ -74,7 +76,7 @@ npm start         # 一个端口同时提供 H5 和 API：http://localhost:8787
 `npm run seed` 会打印每个演示用户的 ID 和恢复码。在另一个浏览器或无痕窗口打开页面，进入“我的 → 恢复账号”登录，就能以朋友身份报名。
 无痕窗口需要恢复账号，并通过管理员批准加入空间后才能查看活动。空间外或未登录的人不能预览活动。
 
-重置数据：删除 `apps/server/data/couju.db`。
+演示请使用独立的 `DB_PATH`；需要重新演示时选择新的数据库路径，不要删除已有数据。
 
 ## 常用命令
 
@@ -83,7 +85,7 @@ npm start         # 一个端口同时提供 H5 和 API：http://localhost:8787
 | `npm run dev` | 开发：API（tsx watch）+ H5（Taro watch） |
 | `npm run build` | 构建 core 与 H5 |
 | `npm start` | 先构建 H5，再启动 API 并托管页面（`npm run dev` 会清空 H5 构建目录，所以 start 每次都会重新构建） |
-| `npm test` | 运行全部自动化测试（core 53 个 + API 30 个） |
+| `npm test` | 运行全部自动化测试（core 53 个 + server/client 48 个，共 101 个） |
 | `npm run typecheck` | core / server / client 三端类型检查 |
 | `npm run seed` | 写入演示数据 |
 | `npm run build:weapp -w @couju/client` | 构建微信小程序到 `apps/client/dist/weapp`（未实机验证） |
