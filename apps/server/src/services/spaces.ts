@@ -25,11 +25,24 @@ export function createSpace(ctx: Ctx, user: User, raw: unknown) {
     return { space }
   })
 }
+const invitePath = (token: string) => `/pages/spaces/index?invite=${token}`
+function newInvite(ctx: Ctx, id: string) {
+  const token = newToken()
+  ctx.store.setInvite(id, hashToken(token), token)
+  return { token, path: invitePath(token) }
+}
+/** 组长更换邀请链接，旧链接立即失效 */
 export function rotateInvite(ctx: Ctx, user: User, id: string) {
   requireOwner(ctx, user, id)
-  const token = newToken()
-  ctx.store.setInviteHash(id, hashToken(token))
-  return { token, path: `/pages/spaces/index?invite=${token}` }
+  return newInvite(ctx, id)
+}
+/** 成员随时查看当前邀请链接；从没生成过就自动生成一个。旧版只存了哈希的链接无法显示，需要组长更换 */
+export function currentInvite(ctx: Ctx, user: User, id: string): { token: string | null; path: string | null } {
+  requireMember(ctx, user, id)
+  const { token, hasHash } = ctx.store.getInvite(id)
+  if (token) return { token, path: invitePath(token) }
+  if (hasHash) return { token: null, path: null }
+  return ctx.store.tx(() => newInvite(ctx, id))
 }
 export function invitePreview(ctx: Ctx, token: string, user?: User) {
   const s = ctx.store.spaceFromInvite(hashToken(token))

@@ -21,7 +21,8 @@ export default function Spaces() {
   const [manage, setManage] = useState<string | null>(null)
   const [members, setMembers] = useState<Member[]>([])
   const [requests, setRequests] = useState<Request[]>([])
-  const [link, setLink] = useState('')
+  // 每个空间当前的邀请链接路径；null = 旧版链接显示不出来，需要组长更换
+  const [invites, setInvites] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState(false)
   const [justJoined, setJustJoined] = useState(false)
   async function run(fn: () => Promise<void>) {
@@ -46,13 +47,24 @@ export default function Spaces() {
     if (!(await requireUser('先告诉大家你是谁，再加入组'))) return
     const r = await post<{ joined: boolean }>(`/api/space-invites/${encodeURIComponent(token)}/requests`)
     await refreshSpaces()
+    await loadInvites()
     setJustJoined(r.joined)
     await loadPreview(token)
+  }
+  async function loadInvites() {
+    const list = getSession().spaces
+    const pairs = await Promise.all(
+      list.map(async (sp) => [sp.id, (await get<{ path: string | null }>(`/api/spaces/${sp.id}/invite`)).path] as const),
+    )
+    setInvites(Object.fromEntries(pairs))
   }
   useLocaleDidShow(() => {
     void bootSession()
       .then(async () => {
-        if (getSession().user) await refreshSpaces()
+        if (getSession().user) {
+          await refreshSpaces()
+          await loadInvites()
+        }
         if (!params.invite) return
         const p = await loadPreview(params.invite)
         // 已经有身份的人打开邀请链接就直接加入
@@ -65,7 +77,6 @@ export default function Spaces() {
       get<{ members: Member[] }>(`/api/spaces/${id}/members`),
       get<{ requests: Request[] }>(`/api/spaces/${id}/requests`),
     ])
-    if (manage !== id) setLink('')
     setManage(id)
     setMembers(m.members)
     setRequests(r.requests)
@@ -91,9 +102,23 @@ export default function Spaces() {
               {t('进入')}
             </Button>
           </View>
+          {invites[s.id] ? (
+            <View className='mt12'>
+              <View className='space-link' onClick={() => void copyText(appUrl(invites[s.id]!), t('复制好了，发给朋友吧'))}>
+                {appUrl(invites[s.id]!)}
+              </View>
+              <View className='muted small mt4'>{t('点链接复制。朋友打开就能直接加入。')}</View>
+            </View>
+          ) : invites[s.id] === null ? (
+            <View className='muted small mt12'>
+              {s.role === 'owner'
+                ? t('之前的邀请链接这里显示不出来。点“成员管理”里的“更换邀请链接”，之后就会一直显示。')
+                : t('组长更换一次邀请链接后，这里就能复制了。')}
+            </View>
+          ) : null}
           {s.role === 'owner' ? (
             <Button kind='ghost' className='mt12' disabled={busy} onClick={() => void run(() => loadManage(s.id))}>
-              {t('成员与加入申请')}
+              {t('成员管理')}
             </Button>
           ) : (
             <Button
@@ -105,7 +130,7 @@ export default function Spaces() {
                   if (
                     !(await confirm(
                       t('退出这个空间？'),
-                      t('你的未来报名会撤回，未结束的主办活动会取消。历史记录保留，重新加入需要批准。'),
+                      t('你的未来报名会撤回，未结束的主办活动会取消。历史记录保留，之后可以用邀请链接重新加入。'),
                       t('退出空间'),
                     ))
                   )
@@ -215,20 +240,14 @@ export default function Spaces() {
                 if (!(await confirm(t('生成新的空间邀请链接？'), t('之前的邀请链接将失效。'), t('生成链接'))))
                   return
                 const r = await post<{ path: string }>(`/api/spaces/${manage}/invite`)
-                const url = appUrl(r.path)
-                setLink(url)
-                await copyText(url)
+                setInvites((m) => ({ ...m, [manage]: r.path }))
+                await copyText(appUrl(r.path), t('新链接已复制，旧链接已失效'))
               })
             }
           >
-            {t('生成 / 更换邀请链接')}
+            {t('更换邀请链接')}
           </Button>
-          {link && (
-            <View className='space-link mt12' onClick={() => void copyText(link)}>
-              {link}
-            </View>
-          )}
-          <View className='h2 mt24'>{t('加入申请 · {0}', requests.length)}</View>
+          {requests.length > 0 && <View className='h2 mt24'>{t('加入申请 · {0}', requests.length)}</View>}
           {requests.map((r) => (
             <View key={r.id} className='space-member mt12'>
               <View className='row gap12'>
@@ -265,7 +284,6 @@ export default function Spaces() {
               </View>
             </View>
           ))}
-          {!requests.length && <View className='muted mt8'>{t('没有待处理申请。')}</View>}
           <View className='h2 mt24'>{t('成员 · {0}', members.length)}</View>
           {members.map((m) => (
             <View className='space-member row gap12 mt12' key={m.userId}>

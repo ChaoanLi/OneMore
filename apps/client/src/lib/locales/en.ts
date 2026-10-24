@@ -381,6 +381,15 @@ export const clientEnglish: Record<string, string> = {
   '退出这局？': 'Leave this event?',
   '组局的人会看到你不来了，之后改主意还能再报名。': "The host will see you're out. You can sign up again later.",
   确定退出: 'Leave',
+  '点链接复制。朋友打开就能直接加入。': 'Tap the link to copy it. Friends can join right away.',
+  '之前的邀请链接这里显示不出来。点“成员管理”里的“更换邀请链接”，之后就会一直显示。':
+    "Your earlier invite link can't be shown here. Use \"Replace invite link\" under Members and it will stay visible.",
+  '组长更换一次邀请链接后，这里就能复制了。': 'The link will show here after the owner replaces it once.',
+  成员管理: 'Members',
+  '你的未来报名会撤回，未结束的主办活动会取消。历史记录保留，之后可以用邀请链接重新加入。':
+    'Your upcoming sign-ups will be withdrawn and events you host will be cancelled. History is kept, and you can rejoin with an invite link.',
+  '新链接已复制，旧链接已失效': 'New link copied. The old link no longer works.',
+  更换邀请链接: 'Replace invite link',
   '先告诉大家你是谁，再加入组': 'Tell everyone who you are before joining',
   链接已失效: 'This link is no longer valid',
   '这局的链接不能用来加入组，请找组里的人要邀请链接': "This event link can't be used to join the space. Ask a member for an invite link.",

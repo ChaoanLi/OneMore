@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join as pathJoin } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { createApp } from '../src/app'
 import { Store } from '../src/store'
 import { ConsoleTransport, Mailer } from '../src/services/mailer'
@@ -139,6 +143,41 @@ describe('独立空间授权', () => {
     expect((await call('POST', `/api/space-invites/${old}/requests`, c.token)).status).toBe(404)
     expect((await call('GET', '/api/events', c.token, id)).status).toBe(403)
     expect((await call('POST', `/api/spaces/${id}/leave`, a.token)).status).toBe(400)
+  })
+  it('邀请链接常驻：成员随时能看到同一条；只有组长能更换，更换后旧链接失效；旧版只存哈希的需要组长更换', async () => {
+    const a = await guest('A'),
+      b = await guest('B'),
+      c = await guest('C'),
+      d = await guest('D')
+    const id = await space(a.token, 'A空间')
+    expect((await call('GET', `/api/spaces/${id}/invite`, b.token)).status).toBe(403)
+    const first = (await call('GET', `/api/spaces/${id}/invite`, a.token)).data
+    expect(first.path).toBe(`/pages/spaces/index?invite=${first.token}`)
+    expect((await call('POST', `/api/space-invites/${first.token}/requests`, b.token)).data.joined).toBe(true)
+    // 成员看到的是同一条，刷新也不变
+    expect((await call('GET', `/api/spaces/${id}/invite`, b.token)).data.token).toBe(first.token)
+    expect((await call('GET', `/api/spaces/${id}/invite`, a.token)).data.token).toBe(first.token)
+    expect((await call('POST', `/api/spaces/${id}/invite`, b.token)).status).toBe(403)
+    const next = (await call('POST', `/api/spaces/${id}/invite`, a.token)).data
+    expect((await call('GET', `/api/spaces/${id}/invite`, b.token)).data.token).toBe(next.token)
+    expect((await call('POST', `/api/space-invites/${first.token}/requests`, c.token)).status).toBe(404)
+    expect((await call('POST', `/api/space-invites/${next.token}/requests`, c.token)).data.joined).toBe(true)
+    // 旧版数据：只有哈希没有原文
+    ;(store as any).db.prepare('UPDATE spaces SET invite_token=NULL WHERE id=?').run(id)
+    expect((await call('GET', `/api/spaces/${id}/invite`, b.token)).data).toEqual({ token: null, path: null })
+    expect((await call('POST', `/api/space-invites/${next.token}/requests`, d.token)).data.joined).toBe(true)
+  })
+  it('老数据库启动时自动补上邀请链接原文那一列', () => {
+    const dir = mkdtempSync(pathJoin(tmpdir(), 'onemore-'))
+    const file = pathJoin(dir, 'old.db')
+    new Store(file).close()
+    const raw = new DatabaseSync(file)
+    raw.exec('ALTER TABLE spaces DROP COLUMN invite_token')
+    raw.close()
+    const reopened = new Store(file)
+    expect(() => reopened.getInvite('nope')).not.toThrow()
+    reopened.close()
+    rmSync(dir, { recursive: true, force: true })
   })
   it('打开公开局的链接直接加入这个局所在的组；私密局、取消的局、错误的链接都不行', async () => {
     const a = await guest('A'),

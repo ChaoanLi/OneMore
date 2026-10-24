@@ -43,6 +43,9 @@ export class Store extends LegacyStore {
     this.db.exec(
       "UPDATE space_members SET data=json_set(data,'$.generation',lower(hex(randomblob(16)))) WHERE json_extract(data,'$.generation') IS NULL",
     )
+    // 邀请链接原文，供成员随时复制（老数据库补列）
+    const cols = this.db.prepare('PRAGMA table_info(spaces)').all() as { name: string }[]
+    if (!cols.some((c) => c.name === 'invite_token')) this.db.exec('ALTER TABLE spaces ADD COLUMN invite_token TEXT')
   }
   forSpace(spaceId: string): Store {
     if (!this.getSpace(spaceId)) throw notFound('空间不存在')
@@ -120,8 +123,15 @@ export class Store extends LegacyStore {
   assertMembers(ids: string[]) {
     if (ids.some((id) => !this.isMember(id))) throw badRequest('只能选择当前空间的成员')
   }
-  setInviteHash(spaceId: string, hash: string) {
-    this.db.prepare('UPDATE spaces SET invite_hash=? WHERE id=?').run(hash, spaceId)
+  setInvite(spaceId: string, hash: string, token: string) {
+    this.db.prepare('UPDATE spaces SET invite_hash=?, invite_token=? WHERE id=?').run(hash, token, spaceId)
+  }
+  /** hasHash：生成过链接；token 为 null 且 hasHash 时是旧版只存了哈希的链接 */
+  getInvite(spaceId: string): { token: string | null; hasHash: boolean } {
+    const r = this.db.prepare('SELECT invite_hash, invite_token FROM spaces WHERE id=?').get(spaceId) as
+      | { invite_hash: string | null; invite_token: string | null }
+      | undefined
+    return { token: r?.invite_token ?? null, hasHash: !!r?.invite_hash }
   }
   spaceFromInvite(hash: string): Space | undefined {
     const r = this.db.prepare('SELECT data FROM spaces WHERE invite_hash=?').get(hash) as { data: string } | undefined

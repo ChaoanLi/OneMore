@@ -130,6 +130,7 @@ export function createApp(deps: AppDeps) {
   app.get('/api/spaces', (c) => c.json({ spaces: ctx.store.listSpaces(me(c).id) }))
   app.post('/api/spaces', async (c) => c.json(spaces.createSpace(scoped(c), me(c), await body(c))))
   app.get('/api/spaces/:id/members', (c) => c.json(spaces.memberList(scoped(c), me(c), c.req.param('id'))))
+  app.get('/api/spaces/:id/invite', (c) => c.json(spaces.currentInvite(scoped(c), me(c), c.req.param('id'))))
   app.post('/api/spaces/:id/invite', (c) => c.json(spaces.rotateInvite(scoped(c), me(c), c.req.param('id'))))
   app.get('/api/space-invites/:token', (c) => c.json(spaces.invitePreview(scoped(c), c.req.param('token'), c.get('user'))))
   app.post('/api/space-invites/:token/requests', (c) => c.json(spaces.requestJoin(scoped(c), me(c), c.req.param('token'))))
