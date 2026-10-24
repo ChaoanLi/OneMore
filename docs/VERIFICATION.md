@@ -4,11 +4,11 @@ Date: 2026-10-23. The bilingual showcase extends the independent-space baseline 
 
 ## Current bilingual build
 
-- `npm test`: **61 core + 83 server/client = 144 passing tests**, including request-language concurrency, recipient email/account-locale ICS, UTC/DST calculations, notification metadata, historical text, validated scheduling presets, revoked queued permissions, locale bootstrap races, stale rejected responses and real React cached-page lifecycle behavior.
+- `npm test`: **61 core + 105 server/client = 166 passing tests**, including request-language concurrency, recipient email/account-locale ICS, UTC/DST calculations, notification metadata, historical text, validated scheduling presets, revoked queued permissions, locale bootstrap races, stale rejected responses and real React cached-page lifecycle behavior.
 - `npm run typecheck`: core, server and client pass. React DOM types were added for the real hook regression test; JSDOM is an explicit development dependency, reusing the installed version.
-- `npm run build`: production H5 succeeds. Two webpack size warnings remain; combined entry is approximately **598 KiB**. This is a size limitation, not a claim of measured network performance.
+- `npm run build`: production H5 succeeds. Two webpack size warnings remain; combined entry is approximately **600 KiB**. This is a size limitation, not a claim of measured network performance.
 - Root integration regressions: locale-only bootstrap invalidation retries without restoring a replaced account; outdated network failures become `stale_context`. Display generations and content generations remain separate.
-- Fresh scoped reviews: core/server approved; client review identified and then approved fixes for sheet refresh, structured interest presets, button contrast and hidden-page navigation. Final whole-branch review is recorded below after completion.
+- Fresh scoped reviews: core/server approved; client review identified and then approved fixes for sheet refresh, structured interest presets, button contrast and hidden-page navigation. Final whole-branch review identified and then approved the fixes described below; no unresolved findings remain.
 
 ## Browser checks with isolated synthetic data
 
@@ -20,6 +20,29 @@ The browser used an independent temporary SQLite database, five invented account
 - English demo request `Riichi mahjong tomorrow evening with 4 players` produces an editable draft. Chicago 20:00 and Beijing 09:00 the following day remain identical across language changes. No event or invitation is created by generating the draft.
 - Mixed-language title and note entered in the draft remain verbatim after English→Chinese. Candidate times and switches remain selected. Email settings preserve typed input while the open sheet changes language. Account time zone remains US Central.
 - Six real app screenshots (English/Chinese home, details and spaces) form the README gallery. The banner is a separate original SVG.
+
+## Final integration review and fixes
+
+The final review found four cross-layer issues: differing English catalog names,
+stale profile merges, a new explicit language choice overwritten during bootstrap,
+and successful command acknowledgements discarded by locale invalidation. They
+were fixed together and passed a scoped re-review. Client game naming now uses the
+shared core helper. Profile updates merge against the latest stored row; client
+cache merges acknowledged fields and guards older reads. Explicit selections made
+during bootstrap persist for the resolved identity. Language switching waits for
+in-flight commands and their callers to acknowledge results; commands are never
+retried automatically. New tests also cover first signup, replaced identities,
+one-time calendar URL continuity and query-stamped page titles.
+
+The root reran the complete 166-test suite, all three typechecks and H5 build after
+these fixes. In the actual browser, a simulated 650ms network delay allowed a
+language choice during event creation: the UI reached the created event in Chinese,
+and the isolated database contained exactly one event with the test title. An
+English-created built-in game displayed as Chinese 日麻. Generating a calendar
+subscription, switching language and reading the displayed URL confirmed the same
+URL remained available. The account still showed US Central time. Network emulation
+was disabled after testing. The final whole-branch and scoped fix reviews reported
+no remaining Critical, Important or Minor issues.
 
 ## External services and release limits
 
