@@ -67,20 +67,22 @@ export function userFromToken(ctx: Ctx, token: string | undefined): User | undef
 export function updateMe(ctx: Ctx, me: User, raw: unknown): User {
   const input = updateMeSchema.parse(raw)
   return ctx.store.tx(() => {
-    if (input.handle && input.handle !== me.handle) {
+    const latest = ctx.store.getUser(me.id)
+    if (!latest) throw notFound('找不到这个用户')
+    if (input.handle && input.handle !== latest.handle) {
       const taken = ctx.store.getUserByHandle(input.handle)
       if (taken && taken.id !== me.id) throw conflict('这个 ID 已被使用', 'handle_taken')
     }
     const next: User = {
-      ...me,
-      nickname: input.nickname ?? me.nickname,
-      handle: input.handle ?? me.handle,
-      avatar: input.avatar ?? me.avatar,
-      timezone: input.timezone ?? me.timezone,
+      ...latest,
+      nickname: input.nickname ?? latest.nickname,
+      handle: input.handle ?? latest.handle,
+      avatar: input.avatar ?? latest.avatar,
+      timezone: input.timezone ?? latest.timezone,
       ...(input.locale ? { locale: input.locale } : {}),
-      games: input.myGames ? input.myGames.flatMap((g) => (g.gameKey ? [g.gameKey] : [])) : (input.games ?? me.games),
-      myGames: input.myGames ?? me.myGames,
-      roles: input.roles ?? me.roles,
+      games: input.myGames ? input.myGames.flatMap((g) => (g.gameKey ? [g.gameKey] : [])) : (input.games ?? latest.games),
+      myGames: input.myGames ?? latest.myGames,
+      roles: input.roles ?? latest.roles,
     }
     ctx.store.saveUser(next)
     return next

@@ -20,9 +20,10 @@ flowchart LR
 ## Separate spaces, shared identity
 
 An account can belong to several spaces. Identity, verified email, time zone
-and language preference belong to the account. Friend graphs, circles, custom
-games, events, responses, interests, notifications, email switches and calendar
-feeds belong to a space. Private circles and favorite friends also belong to
+and language preference belong to the account, as do personal game preferences
+(including custom games). Friend graphs, circles, events and their game options,
+responses, interests, notifications, email switches and calendar feeds belong to
+a space. Private circles and favorite friends also belong to
 their creator; sharing a space does not expose these personal lists.
 
 The root store handles identity and space membership. Business services receive
@@ -52,9 +53,11 @@ use the account preference. No server-wide mutable locale is used.
 Translation is explicit: source templates plus indexed arguments. User-written
 titles, names and comments are never scanned or translated. New notifications
 store message metadata and render for the current viewer. Old free-text
-notifications remain historical text. On the client, locale changes invalidate
-in-flight responses while preserving mounted form state and pending drafts;
-account/space changes invalidate both response and content context.
+notifications remain historical text. On the client, explicit language changes
+wait for in-flight commands to be acknowledged, then discard obsolete read
+responses while preserving mounted form state and pending drafts. Commands are
+never retried automatically. Account/space changes invalidate both response and
+content context.
 
 ## Deterministic rules, optional AI
 

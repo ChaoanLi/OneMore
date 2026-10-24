@@ -1,6 +1,7 @@
 import { t, useLocale, getLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Text, View } from '@tarojs/components'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { requestContext } from '../../lib/requestContext'
 import { zoneLabel, type CalendarFeedResponse, type CalendarItem, type CalendarResponse } from '@couju/core'
 import { Page } from '../../components/Page'
 import { FAINT, Icon } from '../../components/Icon'
@@ -215,14 +216,36 @@ export default function CalendarPage() {
 /** 订阅到手机日历（ICS） */
 function FeedCard() {
   useLocale()
-  const [status, setStatus] = useState<CalendarFeedResponse | null>(null)
+  useSession() // Re-render immediately when the account or active space changes.
+  const context = requestContext.capture()
+  const [saved, setSaved] = useState<{ context: typeof context; value: CalendarFeedResponse } | null>(null)
+  const writeRevision = useRef(0)
+  const status = saved && requestContext.sameContent(saved.context) ? saved.value : null
+  const setStatus = (value: CalendarFeedResponse | null) => {
+    if (!requestContext.sameContent(context)) return
+    writeRevision.current++
+    setSaved(value ? { context, value } : null)
+  }
   const [busy, setBusy] = useState(false)
   const [help, setHelp] = useState(false)
   const [open, setOpen] = useState(false)
 
   useLocaleDidShow(() => {
+    const snapshot = requestContext.capture()
+    const revision = writeRevision.current
     get<CalendarFeedResponse>('/api/me/calendar-feed')
-      .then(setStatus)
+      .then((value) => {
+        if (!requestContext.sameContent(snapshot) || revision !== writeRevision.current) return
+        setSaved((previous) => ({
+          context: snapshot,
+          value: {
+            ...value,
+            path: value.enabled
+              ? (value.path ?? (previous && requestContext.sameContent(previous.context) ? previous.value.path : null))
+              : null,
+          },
+        }))
+      })
       .catch(() => undefined)
   })
 

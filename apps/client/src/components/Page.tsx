@@ -37,13 +37,13 @@ export function Page(props: PropsWithChildren<{ nav?: NavKey; footer?: ReactNode
   const router = useRouter()
   const updateTitle = () => {
     if (!visible.current) return
-    const title = PAGE_TITLES[router.path.replace(/^\//, '')] ?? 'OneMore'
+    const title = PAGE_TITLES[makePageUrl(router.path, {}).replace(/^\//, '')] ?? 'OneMore'
     void Taro.setNavigationBarTitle({ title: t(title) })
     if (typeof document !== 'undefined') document.documentElement.lang = locale
   }
   useEffect(updateTitle, [locale, router.path])
   const chooseLanguage = async (next: 'zh-CN' | 'en') => {
-    if (languageBusy || next === locale) return
+    if (languageBusy) return
     setLanguageBusy(true)
     try {
       await setLocale(next)

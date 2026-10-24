@@ -38,7 +38,43 @@ describe('实际语言偏好与会话接线', () => {
     unread: 0,
     spaces: [{ id: 'friends', name: 'Friends', ownerId: user.id, role: 'owner', createdAt: user.createdAt }],
   }
-  it('初次读取账号期间切换语言会重试，并加载账号偏好与空间', async () => {
+  it.each([false, true])('a new bootstrap selection wins an older account read (cached=%s)', async (cached) => {
+    runtime.storage.set('couju.token', 'saved-token')
+    if (cached) runtime.storage.set('couju.user', JSON.stringify(user))
+    let finish!: (value: unknown) => void
+    runtime.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    runtime.request.mockImplementation(async (options: any) => ({
+      statusCode: 200,
+      data: options.method === 'PATCH' ? { user: { ...user, locale: options.data.locale } } : me,
+    }))
+    const session = await import('../../client/src/lib/session')
+    const i18n = await import('../../client/src/lib/i18n')
+    const { requestContext } = await import('../../client/src/lib/requestContext')
+    const boot = session.bootSession()
+    const selection = i18n.setLocale('en')
+    finish({ statusCode: 200, data: me })
+    await boot
+    await selection
+    expect(session.getSession()).toMatchObject({ ready: true, user: { ...user, locale: 'en' }, spaces: me.spaces, activeSpace: 'friends' })
+    expect(JSON.parse(runtime.storage.get('couju.user') as string).locale).toBe('en')
+    expect(i18n.getLocale()).toBe('en')
+    expect(requestContext.capture()).toMatchObject({ token: 'saved-token', spaceId: 'friends', locale: 'en' })
+    expect(runtime.request.mock.calls.filter(([o]) => o.method === 'PATCH')).toEqual([
+      [
+        expect.objectContaining({
+          url: '/api/me',
+          data: { locale: 'en' },
+          header: expect.objectContaining({ Authorization: 'Bearer saved-token' }),
+        }),
+      ],
+    ])
+  })
+  it('does not persist a pending bootstrap choice onto a replacement identity', async () => {
     runtime.storage.set('couju.token', 'saved-token')
     let finish!: (value: unknown) => void
     runtime.request.mockImplementationOnce(
@@ -47,21 +83,180 @@ describe('实际语言偏好与会话接线', () => {
           finish = resolve
         }),
     )
+    const replacement = { ...user, id: 'replacement', locale: 'zh-CN' }
+    runtime.request.mockImplementation(async (options: any) => ({
+      statusCode: 200,
+      data: options.url === '/api/auth/guest' ? { token: 'replacement-token', user: replacement } : { user: replacement, spaces: [] },
+    }))
+    const session = await import('../../client/src/lib/session')
+    const i18n = await import('../../client/src/lib/i18n')
+    const boot = session.bootSession()
+    const choice = i18n.setLocale('en')
+    await session.signupGuest('Replacement')
+    finish({ statusCode: 200, data: me })
+    await Promise.all([boot, choice])
+    expect(session.getSession().user).toEqual(replacement)
+    expect(runtime.request.mock.calls.filter(([o]) => o.method === 'PATCH')).toHaveLength(0)
+  })
+  it.each(['/api/events', '/api/me/recovery-code', '/api/me/calendar-feed'])(
+    'delivers a committed %s response before switching language',
+    async (path) => {
+      const session = await import('../../client/src/lib/session')
+      const { requestContext } = await import('../../client/src/lib/requestContext')
+      const { post } = await import('../../client/src/lib/api')
+      const i18n = await import('../../client/src/lib/i18n')
+      await session.bootSession()
+      requestContext.setSpace('friends')
+      let finish!: (value: unknown) => void
+      runtime.request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      )
+      const outcomes: unknown[] = []
+      const command = post(path).then((result) => {
+        outcomes.push({ result, locale: i18n.getLocale() })
+      })
+      const switchLanguage = i18n.setLocale('en')
+      expect(i18n.getLocale()).toBe('zh-CN')
+      finish({ statusCode: 200, data: { code: 'created-once', recoveryCode: 'one-time', path: '/feed/synthetic' } })
+      await Promise.all([command, switchLanguage])
+      expect(outcomes).toEqual([{ result: { code: 'created-once', recoveryCode: 'one-time', path: '/feed/synthetic' }, locale: 'zh-CN' }])
+      expect(i18n.getLocale()).toBe('en')
+      expect(runtime.request).toHaveBeenCalledTimes(1)
+    },
+  )
+  it.each(['locale', 'profile'])('merges only acknowledged fields when the %s response arrives last', async (last) => {
+    runtime.storage.set('couju.token', 'saved-token')
     runtime.request.mockResolvedValue({ statusCode: 200, data: me })
+    const session = await import('../../client/src/lib/session')
+    const { patch } = await import('../../client/src/lib/api')
+    const i18n = await import('../../client/src/lib/i18n')
+    await session.bootSession()
+    let localeResponse!: (value: unknown) => void
+    let profileResponse!: (value: unknown) => void
+    runtime.request.mockImplementation(
+      (options: any) =>
+        new Promise((resolve) => {
+          if (options.data.locale) localeResponse = resolve
+          else profileResponse = resolve
+        }),
+    )
+    const selection = i18n.setLocale('en')
+    await vi.waitFor(() => expect(localeResponse).toBeTypeOf('function'))
+    const profile = patch<{ user: User }>('/api/me', { timezone: 'Asia/Shanghai' }).then((res) => session.setUser(res.user, ['timezone']))
+    if (last === 'profile') {
+      // Profile committed first, but its older full-row response is delivered last.
+      localeResponse({ statusCode: 200, data: { user: { ...user, locale: 'en', timezone: 'Asia/Shanghai' } } })
+      await selection
+      profileResponse({ statusCode: 200, data: { user: { ...user, timezone: 'Asia/Shanghai' } } })
+    } else {
+      profileResponse({ statusCode: 200, data: { user: { ...user, locale: 'en', timezone: 'Asia/Shanghai' } } })
+      await profile
+      localeResponse({ statusCode: 200, data: { user: { ...user, locale: 'en' } } })
+    }
+    await Promise.all([profile, selection])
+    expect(session.getSession().user).toMatchObject({ locale: 'en', timezone: 'Asia/Shanghai' })
+    expect(JSON.parse(runtime.storage.get('couju.user') as string)).toMatchObject({ locale: 'en', timezone: 'Asia/Shanghai' })
+  })
+  it('carries a new explicit choice through first-time signup without losing its acknowledgement', async () => {
+    const session = await import('../../client/src/lib/session')
+    const i18n = await import('../../client/src/lib/i18n')
+    await session.bootSession()
+    let finish!: (value: unknown) => void
+    runtime.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    runtime.request.mockImplementation(async (options: any) => ({
+      statusCode: 200,
+      data: options.method === 'PATCH' ? { user: { ...user, locale: options.data.locale } } : me,
+    }))
+    const signup = session.signupGuest('Saved account')
+    const choice = i18n.setLocale('en')
+    finish({ statusCode: 200, data: { token: 'new-token', user } })
+    await Promise.all([signup, choice])
+    expect(session.getSession().user).toMatchObject({ id: user.id, locale: 'en' })
+    expect(i18n.getLocale()).toBe('en')
+    expect(runtime.request.mock.calls.filter(([o]) => o.method === 'PATCH')).toEqual([
+      [expect.objectContaining({ data: { locale: 'en' }, header: expect.objectContaining({ Authorization: 'Bearer new-token' }) })],
+    ])
+  })
+  it.each(['account', 'space'])('keeps %s guards while a language switch waits for a command', async (change) => {
     const session = await import('../../client/src/lib/session')
     const i18n = await import('../../client/src/lib/i18n')
     const { requestContext } = await import('../../client/src/lib/requestContext')
-    const boot = session.bootSession()
-    await i18n.setLocale('en')
-    finish({ statusCode: 200, data: me })
-    await boot
-    expect(session.getSession()).toMatchObject({ ready: true, user, spaces: me.spaces, activeSpace: 'friends' })
-    expect(i18n.getLocale()).toBe('zh-CN')
-    expect(requestContext.capture()).toMatchObject({ token: 'saved-token', spaceId: 'friends', locale: 'zh-CN' })
-    expect(runtime.request.mock.calls[1]![0]).toMatchObject({ url: '/api/me', header: { 'Accept-Language': 'en' } })
+    const { post } = await import('../../client/src/lib/api')
     await session.bootSession()
-    expect(runtime.request).toHaveBeenCalledTimes(2)
+    requestContext.setIdentity('old-account')
+    requestContext.setSpace('A')
+    let finish!: (value: unknown) => void
+    runtime.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const command = post('/api/events').catch((e) => e)
+    const choice = i18n.setLocale('en')
+    if (change === 'account') requestContext.setIdentity('new-account')
+    else requestContext.setSpace('B')
+    finish({ statusCode: 200, data: { code: 'private-old-space' } })
+    expect(await command).toMatchObject({ code: 'stale_context' })
+    await choice
+    expect(runtime.request).toHaveBeenCalledTimes(1)
+    expect(i18n.getLocale()).toBe('zh-CN')
   })
+  it('delivers a failed command before switching language without retrying it', async () => {
+    const session = await import('../../client/src/lib/session')
+    const i18n = await import('../../client/src/lib/i18n')
+    const { post } = await import('../../client/src/lib/api')
+    await session.bootSession()
+    let finish!: (value: unknown) => void
+    runtime.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const command = post('/api/me/recovery-code').catch((e) => ({ code: e.code, locale: i18n.getLocale() }))
+    const choice = i18n.setLocale('en')
+    finish({ statusCode: 403, data: { error: 'forbidden', message: '请先登录' } })
+    expect(await command).toEqual({ code: 'forbidden', locale: 'zh-CN' })
+    await choice
+    expect(i18n.getLocale()).toBe('en')
+    expect(runtime.request).toHaveBeenCalledTimes(1)
+  })
+  it.each(['refreshMe', 'refreshSpaces'] as const)(
+    'does not let an older %s read overwrite an acknowledged locale save',
+    async (refresh) => {
+      runtime.storage.set('couju.token', 'saved-token')
+      const legacy = { ...me, spaces: [], user: { ...user, locale: undefined } }
+      runtime.request.mockResolvedValue({ statusCode: 200, data: legacy })
+      const session = await import('../../client/src/lib/session')
+      const i18n = await import('../../client/src/lib/i18n')
+      await session.bootSession()
+      let finish!: (value: unknown) => void
+      runtime.request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      )
+      const oldRead = session[refresh]()
+      // Same-language explicit persistence must also protect the cached row.
+      runtime.request.mockResolvedValue({ statusCode: 200, data: { user: { ...user, locale: 'zh-CN', timezone: 'Asia/Shanghai' } } })
+      session.setUser({ ...user, timezone: 'Asia/Shanghai' }, ['timezone'])
+      await i18n.setLocale('zh-CN')
+      finish({ statusCode: 200, data: legacy })
+      await oldRead
+      expect(session.getSession().user).toMatchObject({ locale: 'zh-CN', timezone: 'Asia/Shanghai' })
+      expect(JSON.parse(runtime.storage.get('couju.user') as string)).toMatchObject({ locale: 'zh-CN', timezone: 'Asia/Shanghai' })
+    },
+  )
   it('初次读取期间替换身份不会重试或复活旧账号', async () => {
     runtime.storage.set('couju.token', 'saved-token')
     let finish!: (value: unknown) => void

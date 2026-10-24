@@ -4,6 +4,7 @@ import { translate } from '@couju/core'
 import { clientEnglish } from './locales/en'
 import { chooseLocale, formatClientMessage, localizeBuiltin, type Locale } from './localePreference'
 import { requestContext } from './requestContext'
+import { afterCommands } from './commands'
 
 export type { Locale } from './localePreference'
 const STORAGE_KEY = 'onemore.locale'
@@ -40,10 +41,24 @@ export function applyLocale(next: Locale): void {
 export function setLocalePersistence(handler: (next: Locale) => Promise<void>): void {
   persist = handler
 }
+let selectionRevision = 0
+let selectedLocale = locale
+export function getLocaleSelection(): { revision: number; locale: Locale } {
+  return { revision: selectionRevision, locale: selectedLocale }
+}
 export async function setLocale(next: Locale): Promise<void> {
+  selectedLocale = next
+  const revision = ++selectionRevision
+  const context = requestContext.capture()
   Taro.setStorageSync(STORAGE_KEY, next)
-  applyLocale(next)
-  await persist?.(next)
+  let applied = false
+  await afterCommands(() => {
+    if (revision !== selectionRevision || !requestContext.sameContent(context)) return
+    applyLocale(next)
+    applied = true
+  })
+  // Persistence starts after draining commands, so its own PATCH cannot deadlock the gate.
+  if (applied && revision === selectionRevision && requestContext.sameIdentity(context)) await persist?.(next)
 }
 export function useLocale(): Locale {
   const [, force] = useReducer((n: number) => n + 1, 0)

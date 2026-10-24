@@ -21,7 +21,7 @@ export function useMyGames() {
     isSet: !!user?.myGames && user.myGames.length > 0,
     async save(list: MyGame[]) {
       const r = await patch<{ user: User }>('/api/me', { myGames: list })
-      setUser(r.user)
+      setUser(r.user, ['myGames', 'games'])
       return r.user
     },
   }

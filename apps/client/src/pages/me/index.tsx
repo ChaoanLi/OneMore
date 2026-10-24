@@ -78,7 +78,7 @@ export default function Me() {
   const save = async (body: Partial<Pick<User, 'timezone' | 'roles' | 'avatar'>>, msg = t('好了')) => {
     try {
       const r = await patch<{ user: User }>('/api/me', body)
-      setUser(r.user)
+      setUser(r.user, Object.keys(body) as (keyof User)[])
       toastOk(msg)
     } catch (e) {
       toastError(e)
@@ -193,7 +193,7 @@ function ProfileSheet(props: { open: boolean; user: User; onClose: () => void })
     setBusy(true)
     try {
       const r = await patch<{ user: User }>('/api/me', { nickname: nickname.trim(), handle: handle.trim().toLowerCase(), avatar })
-      setUser(r.user)
+      setUser(r.user, ['nickname', 'handle', 'avatar'])
       toastOk(t('好了'))
       props.onClose()
     } catch (e) {
@@ -353,7 +353,7 @@ function AccountSheet(props: { open: boolean; user: User; onClose: () => void; o
     if (bound && !(await confirm(t('重新生成恢复码？'), t('旧的会失效。')))) return
     try {
       const r = await post<{ recoveryCode: string; user: User }>('/api/me/recovery-code')
-      setUser(r.user)
+      setUser(r.user, ['account'])
       setCode(r.recoveryCode)
     } catch (e) {
       toastError(e)

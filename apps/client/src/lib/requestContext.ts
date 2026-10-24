@@ -2,11 +2,13 @@
 export class RequestContext {
   private generation = 0
   private contentGeneration = 0
+  private identityGeneration = 0
   private locale: 'zh-CN' | 'en' = 'zh-CN'
   private token: string | null = null
   private spaceId: string | null = null
   setIdentity(token: string | null) {
     if (token !== this.token) {
+      this.identityGeneration++
       this.token = token
       this.spaceId = null
       this.generation++
@@ -26,12 +28,16 @@ export class RequestContext {
       this.generation++
     }
   }
+  sameIdentity(snapshot: { identityGeneration: number }) {
+    return snapshot.identityGeneration === this.identityGeneration
+  }
   sameContent(snapshot: { contentGeneration: number }) {
     return snapshot.contentGeneration === this.contentGeneration
   }
   capture() {
     return {
       generation: this.generation,
+      identityGeneration: this.identityGeneration,
       contentGeneration: this.contentGeneration,
       token: this.token,
       spaceId: this.spaceId,

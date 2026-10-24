@@ -3,7 +3,7 @@ import { useEffect, useReducer } from 'react'
 import { DEFAULT_TIMEZONE, isValidTimeZone, type AuthResponse, type MeResponse, type User, type SpaceSummary } from '@couju/core'
 import { requestContext } from './requestContext'
 import { ApiError, get, post, patch, setApiToken } from './api'
-import { applyLocale, getLocale, setLocalePersistence, t } from './i18n'
+import { applyLocale, getLocale, getLocaleSelection, setLocale, setLocalePersistence, t } from './i18n'
 
 /**
  * 会话：本地保存访客令牌（couju.token）与用户资料缓存（couju.user）。
@@ -24,10 +24,12 @@ interface SessionState {
 
 let state: SessionState = { ready: false, user: null, unread: 0, spaces: [], activeSpace: null, revision: 0, switching: false }
 const listeners = new Set<() => void>()
+let userRevision = 0
 
 function setState(patch: Partial<SessionState>) {
   state = { ...state, ...patch }
   if (patch.user !== undefined) {
+    userRevision++
     if (patch.user) Taro.setStorageSync(USER_KEY, JSON.stringify(patch.user))
     else Taro.removeStorageSync(USER_KEY)
   }
@@ -64,6 +66,7 @@ let booting: Promise<void> | null = null
 
 export function bootSession(): Promise<void> {
   if (booting) return booting
+  const initialSelection = getLocaleSelection().revision
   booting = (async () => {
     const token = Taro.getStorageSync(TOKEN_KEY) as string
     const cached = Taro.getStorageSync(USER_KEY) as string
@@ -85,7 +88,7 @@ export function bootSession(): Promise<void> {
       try {
         const me = await get<MeResponse>('/api/me')
         if (!requestContext.sameContent(context)) return
-        if (me.user.locale) applyLocale(me.user.locale)
+        if (me.user.locale && getLocaleSelection().revision === initialSelection) applyLocale(me.user.locale)
         applySpaces(me.spaces, me.user)
         setState({ ready: true, user: me.user, unread: 0 })
         return
@@ -121,10 +124,18 @@ function clearLocal() {
 }
 
 export async function signupGuest(nickname: string, timezone = DEFAULT_TIMEZONE): Promise<User> {
+  const initial = requestContext.capture()
+  const selection = getLocaleSelection().revision
   const res = await post<AuthResponse>('/api/auth/guest', { nickname, timezone, locale: getLocale() })
   saveAuth(res)
+  const authenticated = requestContext.capture()
   await refreshSpaces()
-  return res.user
+  // The first signup resolves an anonymous choice to its new account. Replacing an
+  // existing account must never transfer a choice owned by the previous identity.
+  if (!initial.token && requestContext.sameIdentity(authenticated) && getLocaleSelection().revision !== selection) {
+    await setLocale(getLocaleSelection().locale)
+  }
+  return state.user?.id === res.user.id ? state.user : res.user
 }
 
 export async function restoreAccount(handle: string, recoveryCode: string): Promise<User> {
@@ -140,16 +151,19 @@ export async function restoreAccount(handle: string, recoveryCode: string): Prom
   return res.user
 }
 
-export function setUser(user: User) {
-  setState({ user })
+/** Command responses contain full rows, but may arrive after another field was saved. */
+export function setUser(user: User, fields: readonly (keyof User)[]) {
+  if (!state.user || state.user.id !== user.id) return
+  setState({ user: { ...state.user, ...Object.fromEntries(fields.map((key) => [key, user[key]])) } })
 }
 
 export async function refreshMe() {
   if (!state.user) return
+  const revision = userRevision
   try {
     const me = await get<MeResponse>('/api/me')
     applySpaces(me.spaces, me.user)
-    setState({ user: me.user })
+    if (revision === userRevision) setState({ user: me.user })
     if (state.activeSpace) {
       const n = await get<{ unread: number }>('/api/notifications')
       setState({ unread: n.unread })
@@ -185,9 +199,10 @@ function applySpaces(spaces: SpaceSummary[], user: User) {
   }
 }
 export async function refreshSpaces() {
+  const revision = userRevision
   const me = await get<MeResponse>('/api/me')
   applySpaces(me.spaces, me.user)
-  setState({ user: me.user })
+  if (revision === userRevision) setState({ user: me.user })
 }
 export async function selectSpace(id: string, url = '/pages/index/index') {
   if (!state.spaces.some((s) => s.id === id)) {
@@ -224,9 +239,13 @@ export async function requireUser(reason = '先告诉大家怎么称呼你'): Pr
 }
 
 setLocalePersistence(async (locale) => {
-  if (!state.user) return
+  const context = requestContext.capture()
+  const selection = getLocaleSelection().revision
+  // Cached rows are only hints; resolve the current account before persisting a new choice.
+  if (!state.ready) await bootSession()
+  if (!requestContext.sameIdentity(context) || selection !== getLocaleSelection().revision || !state.user) return
   const res = await patch<{ user: User }>('/api/me', { locale })
-  setUser(res.user)
+  setUser(res.user, ['locale'])
 })
 
 export function useIdentityRequest() {
