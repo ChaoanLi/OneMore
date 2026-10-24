@@ -34,7 +34,7 @@ export class DeepSeekDraftProvider implements DraftProvider {
   constructor(
     private readonly apiKey: string,
     private readonly baseUrl = 'https://api.deepseek.com',
-    private readonly model = 'deepseek-chat',
+    private readonly model = 'deepseek-flash',
     private readonly timeoutMs = 15_000,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
@@ -49,6 +49,7 @@ export class DeepSeekDraftProvider implements DraftProvider {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
         body: JSON.stringify({
           model: this.model,
+          thinking: { type: 'disabled' },
           temperature: 0.2,
           max_tokens: 800,
           response_format: { type: 'json_object' },
