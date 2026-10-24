@@ -1,6 +1,7 @@
+import { t, useLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Input, Text, View } from '@tarojs/components'
-import { useLoad } from '@tarojs/taro'
-import { useState } from 'react'
+import { useRouter } from '@tarojs/taro'
+import { useRef, useState } from 'react'
 import type { Circle, CirclesResponse, FriendsResponse } from '@couju/core'
 import { Page } from '../../components/Page'
 import { Button, Card, Chip, Empty, SectionTitle } from '../../components/ui'
@@ -9,30 +10,33 @@ import { back, confirm, toast, toastError } from '../../lib/ui'
 
 /** 新建/编辑私人圈子（只有自己看得到，成员不会收到通知） */
 export default function CircleEdit() {
-  const [id, setId] = useState<string | null>(null)
+  useLocale()
+  const params = useRouter().params
+  const id = params.id ? String(params.id) : null
+  const hydrated = useRef(false)
+  const edited = useRef(false)
   const [name, setName] = useState('')
   const [members, setMembers] = useState<string[]>([])
   const [friends, setFriends] = useState<FriendsResponse['friends']>([])
   const [busy, setBusy] = useState(false)
 
-  useLoad((params) => {
-    const cid = params?.id ? String(params.id) : null
-    setId(cid)
+  useLocaleDidShow(() => {
     Promise.all([get<FriendsResponse>('/api/friends'), get<CirclesResponse>('/api/circles')])
       .then(([f, c]) => {
         setFriends(f.friends)
-        const circle = c.circles.find((x) => x.id === cid)
-        if (circle) {
+        const circle = c.circles.find((x) => x.id === id)
+        if (circle && !hydrated.current && !edited.current) {
           setName(circle.name)
           setMembers(circle.memberIds)
         }
+        hydrated.current = true
       })
       .catch(toastError)
   })
 
   const save = async () => {
     if (!name.trim()) {
-      toast('给圈子起个名字')
+      toast(t('给圈子起个名字'))
       return
     }
     setBusy(true)
@@ -40,7 +44,7 @@ export default function CircleEdit() {
       const body = { name: name.trim(), memberIds: members }
       if (id) await put<{ circle: Circle }>(`/api/circles/${id}`, body)
       else await post<{ circle: Circle }>('/api/circles', body)
-      toast('已保存')
+      toast(t('已保存'))
       back('/pages/friends/index')
     } catch (e) {
       toastError(e)
@@ -53,26 +57,42 @@ export default function CircleEdit() {
     <Page
       footer={
         <Button kind='primary' block size='lg' loading={busy} onClick={save}>
-          保存
+          {t('保存')}
         </Button>
       }
     >
       <View className='row row--between'>
-        <View className='h1'>{id ? '编辑圈子' : '新建圈子'}</View>
+        <View className='h1'>{id ? t('编辑圈子') : t('新建圈子')}</View>
         <Text className='link' onClick={() => back('/pages/friends/index')}>
-          取消
+          {t('取消')}
         </Text>
       </View>
-      <View className='sub mt4'>圈子只有你自己看得到，成员不会收到通知。</View>
+      <View className='sub mt4'>{t('圈子只有你自己看得到，成员不会收到通知。')}</View>
       <Card className='mt16'>
-        <Input className='input' placeholder='比如：麻将搭子' maxlength={20} value={name} onInput={(e) => setName(e.detail.value)} />
+        <Input
+          className='input'
+          placeholder={t('比如：麻将搭子')}
+          maxlength={20}
+          value={name}
+          onInput={(e) => {
+            edited.current = true
+            setName(e.detail.value)
+          }}
+        />
       </Card>
-      <SectionTitle title={`成员（${members.length}）`} />
+      <SectionTitle title={t('成员（{0}）', members.length)} />
       <Card>
-        {friends.length === 0 && <Empty icon='🤝' text='先加几个好友' />}
+        {friends.length === 0 && <Empty icon='🤝' text={t('先加几个好友')} />}
         <View className='row wrap gap8'>
           {friends.map((f) => (
-            <Chip key={f.user.id} on={members.includes(f.user.id)} onClick={() => setMembers(members.includes(f.user.id) ? members.filter((x) => x !== f.user.id) : [...members, f.user.id])}>
+            <Chip
+              key={f.user.id}
+              on={members.includes(f.user.id)}
+              onClick={() => {
+                edited.current = true
+                setMembers(members.includes(f.user.id) ? members.filter((x) => x !== f.user.id) : [...members, f.user.id])
+              }}
+            >
               {f.user.avatar} {f.user.nickname}
             </Chip>
           ))}
@@ -84,12 +104,12 @@ export default function CircleEdit() {
             className='link'
             style={{ color: '#dc3c3c' }}
             onClick={async () => {
-              if (!(await confirm('删除这个圈子？', '不会影响好友关系。', '删除'))) return
+              if (!(await confirm(t('删除这个圈子？'), t('不会影响好友关系。'), t('删除')))) return
               await del(`/api/circles/${id}`).catch(toastError)
               back('/pages/friends/index')
             }}
           >
-            删除圈子
+            {t('删除圈子')}
           </Text>
         </View>
       )}

@@ -1,4 +1,4 @@
-import { shouldNotify, type AppNotification, type NotificationKind, type UserId } from '@couju/core'
+import { renderMessage, type Message, shouldNotify, type AppNotification, type NotificationKind, type UserId } from '@couju/core'
 import type { Ctx } from './context'
 import { newId } from '../util'
 import { notificationEmail } from './email'
@@ -10,7 +10,7 @@ import { notificationEmail } from './email'
 export function notify(
   ctx: Ctx,
   userId: UserId,
-  n: { objectId?: string; kind: NotificationKind; title: string; body: string; link: string; dedupeKey: string },
+  n: { objectId?: string; kind: NotificationKind; title: Message | string; body: Message | string; link: string; dedupeKey: string },
 ): boolean {
   if(!ctx.store.isMember(userId)) return false
   const separator = n.link.includes('?') ? '&' : '?'
@@ -20,7 +20,14 @@ export function notify(
   const history = ctx.store.listNotifications(userId, since)
   const decision = shouldNotify(history, n, now)
   if (!decision.send) return false
-  const item: AppNotification = { id: newId('n'), userId, ...n, createdAt: now.toISOString(), readAt: null }
+  const item: AppNotification = {
+    id: newId('n'), userId, ...n,
+    title: typeof n.title === 'string' ? n.title : renderMessage(ctx.locale ?? 'zh-CN', n.title),
+    body: typeof n.body === 'string' ? n.body : renderMessage(ctx.locale ?? 'zh-CN', n.body),
+    ...(typeof n.title === 'string' ? {} : { titleMessage: n.title }),
+    ...(typeof n.body === 'string' ? {} : { bodyMessage: n.body }),
+    createdAt: now.toISOString(), readAt: null,
+  }
   ctx.store.saveNotification(item)
   // 打开了邮件提醒的人同时收到邮件（夜间顺延）
   notificationEmail(ctx, item)
@@ -28,7 +35,10 @@ export function notify(
 }
 
 export function listNotifications(ctx: Ctx, userId: UserId) {
-  return { items: ctx.store.listNotifications(userId), unread: ctx.store.unreadCount(userId) }
+  return { items: ctx.store.listNotifications(userId).map(n => ({ ...n,
+    title: n.titleMessage ? renderMessage(ctx.locale ?? 'zh-CN', n.titleMessage) : n.title,
+    body: n.bodyMessage ? renderMessage(ctx.locale ?? 'zh-CN', n.bodyMessage) : n.body,
+  })), unread: ctx.store.unreadCount(userId) }
 }
 
 export function markAllRead(ctx: Ctx, userId: UserId) {

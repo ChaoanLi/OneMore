@@ -11,3 +11,5 @@ export * from './ai/mockParser'
 export * from './ai/prompt'
 export * from './api'
 export * from './spaces'
+
+export * from './i18n'

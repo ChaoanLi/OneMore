@@ -1,5 +1,5 @@
 import {
-  aiDraftSchema,
+  aiDraftSchema, message,
   buildDraftSystemPrompt,
   expandDraft,
   mockParseDraft,
@@ -58,7 +58,7 @@ export class DeepSeekDraftProvider implements DraftProvider {
           ],
         }),
       })
-      if (!res.ok) throw new AppError(502, 'ai_unavailable', `AI 服务暂不可用（${res.status}）`)
+      if (!res.ok) throw new AppError(502, 'ai_unavailable', message('AI 服务暂不可用（{0}）', res.status))
       const body = (await res.json()) as { choices?: { message?: { content?: string } }[] }
       const content = body.choices?.[0]?.message?.content
       if (!content) throw new AppError(502, 'ai_bad_output', 'AI 没有返回内容')

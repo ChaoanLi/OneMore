@@ -1,3 +1,4 @@
+import { message } from '@couju/core'
 import {
   circleSchema,
   friendPrefSchema,
@@ -52,7 +53,7 @@ export function requestFriend(ctx: Ctx, me: User, raw: unknown): { status: 'pend
       ctx.store.saveFriendship({ ...existing, status: 'accepted', acceptedAt: now })
       notify(ctx, target.id, {
         kind: 'friend_accepted',
-        title: `${me.nickname} 和你成为了好友`,
+        title: message("{0} 和你成为了好友", me.nickname),
         body: '',
         link: '/pages/friends/index',
         dedupeKey: `friend_accepted:${me.id}`,
@@ -64,8 +65,8 @@ export function requestFriend(ctx: Ctx, me: User, raw: unknown): { status: 'pend
       ctx.store.saveFriendship({ id: newId('f'), a, b, status: 'pending', requestedBy: me.id, createdAt: now })
       notify(ctx, target.id, {
         kind: 'friend_request',
-        title: `${me.nickname} 想加你为好友`,
-        body: '在“好友”页可以接受',
+        title: message("{0} 想加你为好友", me.nickname),
+        body: message("在“好友”页可以接受"),
         link: '/pages/friends/index',
         dedupeKey: `friend_request:${me.id}`,
       })
@@ -81,7 +82,7 @@ export function acceptFriend(ctx: Ctx, me: User, otherId: UserId) {
     ctx.store.saveFriendship({ ...f, status: 'accepted', acceptedAt: ctx.now().toISOString() })
     notify(ctx, otherId, {
       kind: 'friend_accepted',
-      title: `${me.nickname} 接受了你的好友请求`,
+      title: message("{0} 接受了你的好友请求", me.nickname),
       body: '',
       link: '/pages/friends/index',
       dedupeKey: `friend_accepted:${me.id}`,

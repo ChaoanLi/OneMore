@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon'
 import {
-  formatSlot,
+  formatSlot, translate, localizeBuiltinGame,
   utcToLocal,
   type CalendarItem,
   type CalendarResponse,
@@ -55,7 +55,7 @@ export function calendarMonth(ctx: Ctx, me: User, month?: string): CalendarRespo
       startUtc: slot.startUtc,
       endUtc: slot.endUtc,
       localDate: utcToLocal(slot.startUtc, tz).slice(0, 10),
-      timeLabel: formatSlot(slot, tz, now).timeLabel,
+      timeLabel: formatSlot(slot, tz, now, ctx.locale).timeLabel,
     })
 
     if ((event.status === 'confirmed' || event.status === 'completed') && event.final) {
@@ -125,16 +125,17 @@ export function buildFeed(ctx: Ctx, token: string, baseUrl: string, appName: str
   const userId = ctx.store.getCalendarFeedUser(hashToken(token))
   const user = userId ? ctx.store.getUser(userId) : undefined
   if (!user) throw notFound('订阅链接无效或已重新生成')
+  const locale = user.locale ?? 'zh-CN'
   const now = ctx.now()
   const since = now.getTime() - 60 * 24 * 3600_000
 
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//OneMore//Calendar//ZH',
+    `PRODID:-//OneMore//Calendar//${locale === 'en' ? 'EN' : 'ZH'}`,
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:${icsEscape(appName)}`,
+    `X-WR-CALNAME:${icsEscape(locale === 'en' ? 'OneMore' : appName)}`,
     'X-WR-TIMEZONE:UTC',
     'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
     'X-PUBLISHED-TTL:PT1H',
@@ -152,7 +153,7 @@ export function buildFeed(ctx: Ctx, token: string, baseUrl: string, appName: str
     const names = event.final.rosterIds.map((id) => byId.get(id)).filter((n): n is string => !!n)
     const end = slot.endUtc ?? new Date(Date.parse(slot.startUtc) + 2 * 3600_000).toISOString()
     const link = `${baseUrl}/#/pages/event/detail?code=${event.code}&space=${ctx.store.spaceId}`
-    const desc = [option ? `${option.emoji} ${option.name}` : '', names.length ? `名单：${names.join('、')}` : '', event.note, link]
+    const desc = [option ? `${option.emoji} ${localizeBuiltinGame(option, locale).name}` : '', names.length ? translate(locale, '名单：{0}', names.join(locale === 'en' ? ', ' : '、')) : '', event.note, link]
       .filter(Boolean)
       .join('\n')
     lines.push(

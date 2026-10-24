@@ -1,7 +1,8 @@
+import { t, useLocale } from '../../lib/i18n'
 import { Input, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import { useEffect, useState } from 'react'
-import type { CirclesResponse, FriendsResponse, InterestView, MyGame } from '@couju/core'
+import { useEffect, useRef, useState } from 'react'
+import type { CirclesResponse, FriendsResponse, InterestView, InterestWhenPreset, MyGame } from '@couju/core'
 import { GamesSheet, useMyGames } from '../../components/Games'
 import { Icon } from '../../components/Icon'
 import { Page } from '../../components/Page'
@@ -10,14 +11,23 @@ import { get, post } from '../../lib/api'
 import { requireUser } from '../../lib/session'
 import { back, toast, toastError } from '../../lib/ui'
 
-const WHEN = ['今晚', '这周末', '工作日晚上', '下周', '随时']
+const WHEN: { key: InterestWhenPreset; label: string }[] = [
+  { key: 'tonight', label: '今晚' },
+  { key: 'this_weekend', label: '这周末' },
+  { key: 'weekday_evenings', label: '工作日晚上' },
+  { key: 'next_week', label: '下周' },
+  { key: 'anytime', label: '随时' },
+]
 
 /** 先举个手：只说想玩什么，不定时间、不用组织 */
 export default function CreateInterest() {
+  const locale = useLocale()
   const { games } = useMyGames()
+  const hydrated = useRef(false)
+  const audienceEdited = useRef(false)
   const [game, setGame] = useState<MyGame | null>(null)
   const [minPlayers, setMinPlayers] = useState(4)
-  const [whenHint, setWhenHint] = useState('这周末')
+  const [whenPreset, setWhenPreset] = useState<InterestWhenPreset>('this_weekend')
   const [note, setNote] = useState('')
   const [audience, setAudience] = useState<'favorites' | 'friends' | 'circles'>('favorites')
   const [circleIds, setCircleIds] = useState<string[]>([])
@@ -31,10 +41,11 @@ export default function CreateInterest() {
       .then(([f, c]) => {
         setFriends(f)
         setCircles(c.circles)
-        if (f.friends.every((x) => !x.favorite)) setAudience('friends')
+        if (!hydrated.current && !audienceEdited.current && f.friends.every((x) => !x.favorite)) setAudience('friends')
+        hydrated.current = true
       })
       .catch(() => undefined)
-  }, [])
+  }, [locale])
 
   useEffect(() => {
     if (!game && games[0]) pick(games[0])
@@ -54,8 +65,8 @@ export default function CreateInterest() {
 
   const submit = async () => {
     if (!(await requireUser())) return
-    if (!game) return toast('想玩什么？')
-    if (audience === 'circles' && circleIds.length === 0) return toast('选一个圈子')
+    if (!game) return toast(t('想玩什么？'))
+    if (audience === 'circles' && circleIds.length === 0) return toast(t('选一个圈子'))
     setBusy(true)
     try {
       await post<{ interest: InterestView }>('/api/interests', {
@@ -63,12 +74,12 @@ export default function CreateInterest() {
         name: game.gameKey ? '' : game.name,
         emoji: game.emoji,
         minPlayers,
-        whenHint,
+        whenPreset,
         note: note.trim(),
         audience: audience === 'circles' ? { kind: 'circles', circleIds } : { kind: audience },
         ttlDays: 3,
       })
-      toast(count > 0 ? `举起来了，${count} 位朋友看得到` : '举起来了')
+      toast(count > 0 ? t('举起来了，{0} 位朋友看得到', count) : t('举起来了'))
       void Taro.redirectTo({ url: '/pages/index/index' })
     } catch (e) {
       toastError(e)
@@ -81,17 +92,17 @@ export default function CreateInterest() {
     <Page
       footer={
         <Button kind='primary' block size='lg' loading={busy} onClick={submit}>
-          举手
+          {t('举手')}
         </Button>
       }
     >
       <View className='row row--between'>
-        <View className='h1'>先举个手</View>
+        <View className='h1'>{t('先举个手')}</View>
         <Icon name='x' onClick={() => back()} />
       </View>
-      <View className='sub mt8'>不定时间、不用组织，凑够人会提醒大家。</View>
+      <View className='sub mt8'>{t('不定时间、不用组织，凑够人会提醒大家。')}</View>
 
-      <SectionTitle title='想玩什么' />
+      <SectionTitle title={t('想玩什么')} />
       <View className='row wrap gap8'>
         {games.map((g) => (
           <Chip key={g.id} on={game?.id === g.id} onClick={() => pick(g)}>
@@ -103,34 +114,48 @@ export default function CreateInterest() {
         </View>
       </View>
       <View className='switch-row mt8'>
-        <Text className='sub'>凑够几个人提醒大家</Text>
+        <Text className='sub'>{t('凑够几个人提醒大家')}</Text>
         <Stepper value={minPlayers} min={2} max={20} onChange={setMinPlayers} />
       </View>
 
-      <SectionTitle title='大概什么时候' />
+      <SectionTitle title={t('大概什么时候')} />
       <View className='row wrap gap8'>
         {WHEN.map((w) => (
-          <Chip key={w} small on={whenHint === w} onClick={() => setWhenHint(w)}>
-            {w}
+          <Chip key={w.key} small on={whenPreset === w.key} onClick={() => setWhenPreset(w.key)}>
+            {t(w.label)}
           </Chip>
         ))}
       </View>
-      <Input className='input mt12' placeholder='补一句（可选）' maxlength={100} value={note} onInput={(e) => setNote(e.detail.value)} />
+      <Input
+        className='input mt12'
+        placeholder={t('补一句（可选）')}
+        maxlength={100}
+        value={note}
+        onInput={(e) => setNote(e.detail.value)}
+      />
 
-      <SectionTitle title='给谁看' extra={<Text className='sub small'>{count} 人</Text>} />
+      <SectionTitle title={t('给谁看')} extra={<Text className='sub small'>{t('{0} 人', count)}</Text>} />
       <Segmented
         value={audience}
-        onChange={setAudience}
+        onChange={(value) => {
+          audienceEdited.current = true
+          setAudience(value)
+        }}
         options={[
-          { value: 'favorites', label: '常玩的' },
-          { value: 'friends', label: '所有朋友' },
-          ...(circles.length > 0 ? [{ value: 'circles' as const, label: '圈子' }] : []),
+          { value: 'favorites', label: t('常玩的') },
+          { value: 'friends', label: t('所有朋友') },
+          ...(circles.length > 0 ? [{ value: 'circles' as const, label: t('圈子') }] : []),
         ]}
       />
       {audience === 'circles' && (
         <View className='row wrap gap8 mt12'>
           {circles.map((c) => (
-            <Chip key={c.id} small on={circleIds.includes(c.id)} onClick={() => setCircleIds(circleIds.includes(c.id) ? circleIds.filter((x) => x !== c.id) : [...circleIds, c.id])}>
+            <Chip
+              key={c.id}
+              small
+              on={circleIds.includes(c.id)}
+              onClick={() => setCircleIds(circleIds.includes(c.id) ? circleIds.filter((x) => x !== c.id) : [...circleIds, c.id])}
+            >
               {c.name}
             </Chip>
           ))}

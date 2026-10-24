@@ -18,7 +18,7 @@ export function setPrefill(p: CreatePrefill) {
 }
 
 export function takePrefill(): CreatePrefill | null {
-  const p = requestContext.isCurrent(context) ? pending : null
+  const p = requestContext.sameContent(context) ? pending : null
   pending = null
   return p
 }

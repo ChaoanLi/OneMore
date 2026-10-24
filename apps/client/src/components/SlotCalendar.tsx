@@ -1,3 +1,4 @@
+import { t, useLocale } from '../lib/i18n'
 import { Text, View } from '@tarojs/components'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { cx } from './ui'
@@ -32,6 +33,7 @@ export function SlotCalendar<T extends { id: string; localDate: string }>(props:
   /** 默认选中的日期；不传则选第一个有时段的日子 */
   initialDate?: string
 }) {
+  useLocale()
   const byDate = useMemo(() => {
     const m = new Map<string, T[]>()
     for (const s of props.slots) m.set(s.localDate, [...(m.get(s.localDate) ?? []), s])
@@ -64,13 +66,13 @@ export function SlotCalendar<T extends { id: string; localDate: string }>(props:
         <View className='scal__row'>
           {WEEK.map((w) => (
             <View key={w} className='scal__head'>
-              {w}
+              {t(w)}
             </View>
           ))}
         </View>
         {rows.map((r) => (
           <View key={r.days[0]}>
-            {r.month && <View className='scal__month'>{Number(r.month.slice(5))} 月</View>}
+            {r.month && <View className='scal__month'>{t('{0} 月', Number(r.month.slice(5)))}</View>}
             <View className='scal__row'>
               {r.days.map((d) => {
                 const daySlots = byDate.get(d)
@@ -88,7 +90,15 @@ export function SlotCalendar<T extends { id: string; localDate: string }>(props:
                   <View key={d} className='scal__cell' onClick={() => setSelected(d)}>
                     <View
                       className={cx('scal__day', 'scal__day--has', d === selected && 'scal__day--on')}
-                      style={level > 0 ? { background: `rgba(20,20,20,${0.1 + level * 0.85})`, color: dark ? '#fff' : '#141414', borderColor: 'transparent' } : undefined}
+                      style={
+                        level > 0
+                          ? {
+                              background: `rgba(20,20,20,${0.1 + level * 0.85})`,
+                              color: dark ? '#fff' : '#141414',
+                              borderColor: 'transparent',
+                            }
+                          : undefined
+                      }
                     >
                       {Number(d.slice(8))}
                       {b.mark && <View className='scal__mark' />}

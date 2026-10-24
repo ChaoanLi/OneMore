@@ -1,3 +1,4 @@
+import { t, useLocale } from '../lib/i18n'
 import { Text, View } from '@tarojs/components'
 import type { PropsWithChildren, ReactNode } from 'react'
 import type { PublicUser } from '@couju/core'
@@ -15,13 +16,23 @@ export function Button(
     onClick?: () => void
   }>,
 ) {
+  useLocale()
   const { kind = 'default', size, block, disabled, loading, className, onClick, children } = props
   return (
     <View
-      className={cx('btn', kind !== 'default' && `btn--${kind}`, size && `btn--${size}`, block && 'btn--block', (disabled || loading) && 'btn--disabled', className)}
+      className={cx(
+        'btn',
+        kind !== 'default' && `btn--${kind}`,
+        size && `btn--${size}`,
+        block && 'btn--block',
+        (disabled || loading) && 'btn--disabled',
+        className,
+      )}
+      role='button'
+      aria-disabled={disabled || loading}
       onClick={() => !disabled && !loading && onClick?.()}
     >
-      {loading ? '请稍候…' : children}
+      {loading ? t('请稍候…') : children}
     </View>
   )
 }
@@ -38,9 +49,14 @@ export function Tag(props: PropsWithChildren<{ tone?: 'brand' | 'ok' | 'warn' | 
   return <Text className={cx('tag', props.tone && props.tone !== 'gray' && `tag--${props.tone}`)}>{props.children}</Text>
 }
 
-export function Card(props: PropsWithChildren<{ tone?: 'brand' | 'ok' | 'warn' | 'info' | 'dashed'; className?: string; onClick?: () => void }>) {
+export function Card(
+  props: PropsWithChildren<{ tone?: 'brand' | 'ok' | 'warn' | 'info' | 'dashed'; className?: string; onClick?: () => void }>,
+) {
   return (
-    <View className={cx('card', props.tone && `card--${props.tone}`, props.onClick && 'card--tap', props.className)} onClick={props.onClick}>
+    <View
+      className={cx('card', props.tone && `card--${props.tone}`, props.onClick && 'card--tap', props.className)}
+      onClick={props.onClick}
+    >
       {props.children}
     </View>
   )
@@ -88,7 +104,11 @@ export function Stepper(props: { value: number; min: number; max: number; onChan
   )
 }
 
-export function Segmented<T extends string>(props: { value: T; options: { value: NoInfer<T>; label: string }[]; onChange: (v: NoInfer<T>) => void }) {
+export function Segmented<T extends string>(props: {
+  value: T
+  options: { value: NoInfer<T>; label: string }[]
+  onChange: (v: NoInfer<T>) => void
+}) {
   return (
     <View className='seg'>
       {props.options.map((o) => (
@@ -133,7 +153,8 @@ export function Empty(props: { icon?: string; text: string; children?: ReactNode
 }
 
 export function Loading() {
-  return <Empty icon='⏳' text='加载中…' />
+  useLocale()
+  return <Empty icon='⏳' text={t('加载中…')} />
 }
 
 export { cx }

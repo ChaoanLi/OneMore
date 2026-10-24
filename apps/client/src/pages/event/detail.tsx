@@ -1,5 +1,6 @@
+import { t, useLocale, getLocale, useLocaleDidShow, localizeBuiltinGame } from '../../lib/i18n'
 import { Button as TaroButton, Input, Switch, Text, Textarea, View } from '@tarojs/components'
-import Taro, { useDidShow, useRouter, useShareAppMessage } from '@tarojs/taro'
+import Taro, { useRouter, useShareAppMessage } from '@tarojs/taro'
 import { useEffect, useMemo, useState } from 'react'
 import {
   DEFAULT_TIMEZONE,
@@ -22,12 +23,14 @@ import { SlotEditor } from '../../components/SlotEditor'
 import { Avatar, AvatarStack, Button, Card, Chip, Empty, Loading, Progress, SectionTitle, Sheet, Tag, cx } from '../../components/ui'
 import { ApiError, get, post, put } from '../../lib/api'
 import { bootSession, requireUser, useSession } from '../../lib/session'
+import { isWeekendLocalDate } from '../../lib/localeCalendar'
 import { APP_NAME } from '../../lib/brand'
 import { appUrl, confirm, copyText, eventPath, go, isH5, shareText, toast, toastError, toastOk } from '../../lib/ui'
 
 type ActionResult = { view: EventView; added?: number }
 
 export default function EventDetail() {
+  useLocale()
   const router = useRouter()
   const code = String(router.params.code ?? '')
   const { user } = useSession()
@@ -47,10 +50,11 @@ export default function EventDetail() {
       setError(null)
       if (isH5) void Taro.setNavigationBarTitle({ title: v.event.title })
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '加载失败')
+      if (e instanceof ApiError && e.code === 'stale_context') return
+      setError(e instanceof ApiError ? e.message : t('加载失败'))
     }
   }
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     void load()
   })
   useEffect(() => {
@@ -64,7 +68,7 @@ export default function EventDetail() {
     if (view && user && view.viewer.role === 'anonymous') void load()
   }, [user?.id])
 
-  const shareTitle = view ? `${view.host.nickname} 约你：${view.event.title}` : APP_NAME
+  const shareTitle = view ? t('{0} 约你：{1}', view.host.nickname, view.event.title) : APP_NAME
   useShareAppMessage(() => ({ title: shareTitle, path: eventPath(code) }))
 
   /** 发起人/报名者的操作：成功后用服务端返回的最新视图刷新 */
@@ -85,7 +89,7 @@ export default function EventDetail() {
       <Page>
         <Empty icon='🔍' text={error}>
           <Button kind='primary' className='mt16' onClick={() => void Taro.redirectTo({ url: '/pages/index/index' })}>
-            回首页
+            {t('回首页')}
           </Button>
         </Empty>
       </Page>
@@ -109,10 +113,15 @@ export default function EventDetail() {
   const myResp = viewer.response
   const yesOf = (slotId: string) => view.participants.filter((p) => p.intent === 'joined' && p.availability[slotId] === 'yes')
   const maybeOf = (slotId: string) =>
-    view.participants.filter((p) => (p.intent === 'joined' || p.intent === 'maybe') && (p.availability[slotId] === 'maybe' || (p.intent === 'maybe' && p.availability[slotId] === 'yes')))
+    view.participants.filter(
+      (p) =>
+        (p.intent === 'joined' || p.intent === 'maybe') &&
+        (p.availability[slotId] === 'maybe' || (p.intent === 'maybe' && p.availability[slotId] === 'yes')),
+    )
   const feasibleSlots = new Set((view.evaluation?.combos ?? []).filter((c) => c.feasible).map((c) => c.slotId))
   const need = Math.max(1, Math.min(...event.options.map((o) => o.minPlayers)))
-  const bestDate = [...futureSlots].sort((a, b) => yesOf(b.id).length - yesOf(a.id).length || a.startUtc.localeCompare(b.startUtc))[0]?.localDate
+  const bestDate = [...futureSlots].sort((a, b) => yesOf(b.id).length - yesOf(a.id).length || a.startUtc.localeCompare(b.startUtc))[0]
+    ?.localDate
   const showEditor = viewer.canRespond && !viewer.inRoster && (editing || !myResp) && !(isHost && myResp)
 
   return (
@@ -120,7 +129,7 @@ export default function EventDetail() {
       footer={
         isHost && event.status === 'open' ? (
           <Button kind='primary' block size='lg' onClick={() => setShareOpen(true)}>
-            丢到群里
+            {t('丢到群里')}
           </Button>
         ) : undefined
       }
@@ -128,19 +137,21 @@ export default function EventDetail() {
       {/* 头部 */}
       <View className='row row--between'>
         <Icon name='left' onClick={() => void Taro.redirectTo({ url: '/pages/index/index' })} />
-        {!view.restricted && (event.status === 'open' || event.status === 'confirmed') && <Icon name='share' onClick={() => setShareOpen(true)} />}
+        {!view.restricted && (event.status === 'open' || event.status === 'confirmed') && (
+          <Icon name='share' onClick={() => setShareOpen(true)} />
+        )}
       </View>
       <View className='mt12'>
         <View className='row gap8'>
           <Text className='emoji-lg'>{event.options.map((o) => o.emoji).join('')}</Text>
           <Tag tone={event.status === 'confirmed' ? 'ok' : event.status === 'open' ? 'brand' : 'gray'}>{event.statusText}</Tag>
-          {event.mode === 'offline' && <Tag tone='info'>线下</Tag>}
+          {event.mode === 'offline' && <Tag tone='info'>{t('线下')}</Tag>}
         </View>
         <View className='h1 mt8'>{event.title}</View>
         <View className='row gap8 mt8'>
           <Avatar user={view.host} size='sm' />
-          <Text className='sub'>{isHost ? '我' : view.host.nickname} 组的局</Text>
-          {event.options.length > 1 && <Text className='muted'>· {event.options.length} 种玩法，大家挑</Text>}
+          <Text className='sub'>{t('{0} 组的局', isHost ? t('我') : view.host.nickname)}</Text>
+          {event.options.length > 1 && <Text className='muted'>{t('· {0} 种玩法，大家挑', event.options.length)}</Text>}
         </View>
         {event.note && <View className='sub mt8'>{event.note}</View>}
         {event.location && <View className='sub mt4'>📍 {event.location}</View>}
@@ -148,10 +159,12 @@ export default function EventDetail() {
 
       {view.restricted ? (
         <Card tone='warn' className='mt16'>
-          <View className='h3'>🔒 这局只对被邀请的人开放</View>
-          <View className='sub mt4'>如果你也想参加，可以先加 {view.host.nickname} 为好友（ID：{view.host.handle}），请 TA 邀请你。</View>
+          <View className='h3'>{t('🔒 这局只对被邀请的人开放')}</View>
+          <View className='sub mt4'>
+            {t('如果你也想参加，可以先加 {0} 为好友（ID：{1}），请 TA 邀请你。', view.host.nickname, view.host.handle)}
+          </View>
           <Button kind='primary' size='sm' className='mt12' onClick={() => go(`/pages/friends/add?h=${view.host.handle}`)}>
-            加 {view.host.nickname} 为好友
+            {t('加{0}为好友', view.host.nickname)}
           </Button>
         </Card>
       ) : (
@@ -162,22 +175,26 @@ export default function EventDetail() {
           {viewer.inRoster && event.status === 'confirmed' && (
             <RosterCard
               view={view}
-              onConfirm={() => act(`/api/events/${code}/final-confirm`, {}, '好，到时见')}
+              onConfirm={() => act(`/api/events/${code}/final-confirm`, {}, t('好，到时见'))}
               onWithdraw={async () => {
-                if (await confirm('临时有事？', '会告诉组局的人找人补上。没事，下次再约。', '嗯，来不了')) {
-                  await act(`/api/events/${code}/withdraw`, {}, '已经告诉组局的人了')
+                if (await confirm(t('临时有事？'), t('会告诉组局的人找人补上。没事，下次再约。'), t('嗯，来不了'))) {
+                  await act(`/api/events/${code}/withdraw`, {}, t('已经告诉组局的人了'))
                 }
               }}
             />
           )}
           {viewer.inWaitlist && (
             <Card tone='info' className='mt12'>
-              <View className='bold'>你在候补第 {(event.final?.waitlistIds.indexOf(user?.id ?? '') ?? 0) + 1} 位</View>
-              <View className='sub mt4'>有人临时有事，组局的人会叫你补上，到时会通知你。</View>
+              <View className='bold'>{t('你在候补第 {0} 位', (event.final?.waitlistIds.indexOf(user?.id ?? '') ?? 0) + 1)}</View>
+              <View className='sub mt4'>{t('有人临时有事，组局的人会叫你补上，到时会通知你。')}</View>
             </Card>
           )}
           {!showEditor && myResp && !viewer.inRoster && !viewer.inWaitlist && !isHost && (
-            <MyResponse view={view} onEdit={() => setEditing(true)} onWithdraw={() => act(`/api/events/${code}/withdraw`, {}, '已退出')} />
+            <MyResponse
+              view={view}
+              onEdit={() => setEditing(true)}
+              onWithdraw={() => act(`/api/events/${code}/withdraw`, {}, t('已退出'))}
+            />
           )}
           {showEditor && (
             <RespondPanel
@@ -194,7 +211,9 @@ export default function EventDetail() {
               }}
             />
           )}
-          {!viewer.canRespond && !myResp && event.status !== 'open' && !isHost && <View className='muted center mt16'>这局现在不收人了</View>}
+          {!viewer.canRespond && !myResp && event.status !== 'open' && !isHost && (
+            <View className='muted center mt16'>{t('这局现在不收人了')}</View>
+          )}
 
           {/* 发起人面板 */}
           {isHost && (
@@ -205,18 +224,27 @@ export default function EventDetail() {
                 const slot = slotById.get(combo.slotId)!
                 const names = (ids: string[]) => ids.map((id) => nameOf.get(id)?.nickname ?? '?').join('、')
                 const ok = await confirm(
-                  '就这么定了？',
-                  `${option.emoji} ${option.name} · ${slot.line}。名单：${names(combo.roster)}${combo.waitlist.length ? `；候补：${names(combo.waitlist)}` : ''}。定了之后会通知名单里的人。`,
-                  '定了',
+                  t('就这么定了？'),
+                  t(
+                    '{0} {1} · {2}。名单：{3}{4}。定了之后会通知名单里的人。',
+                    option.emoji,
+                    option.name,
+                    slot.line,
+                    names(combo.roster),
+                    combo.waitlist.length ? t('；候补：{0}', names(combo.waitlist)) : '',
+                  ),
+                  t('定了'),
                 )
-                if (ok) await act(`/api/events/${code}/confirm`, { optionId: combo.optionId, slotId: combo.slotId }, '成了！')
+                if (ok) await act(`/api/events/${code}/confirm`, { optionId: combo.optionId, slotId: combo.slotId }, t('成了！'))
               }}
-              onPromote={(userId) => act(`/api/events/${code}/promote`, { userId }, '已经叫 TA 补上')}
+              onPromote={(userId) => act(`/api/events/${code}/promote`, { userId }, t('已经叫 TA 补上'))}
               onReopen={async () => {
-                if (await confirm('重新开放报名？', '当前名单会清空，大家的报名保留。')) await act(`/api/events/${code}/reopen`, {}, '已重新开放')
+                if (await confirm(t('重新开放报名？'), t('当前名单会清空，大家的报名保留。')))
+                  await act(`/api/events/${code}/reopen`, {}, t('已重新开放'))
               }}
               onCancel={async () => {
-                if (await confirm('取消这局？', '会告诉已经报名的朋友。', '取消这局')) await act(`/api/events/${code}/cancel`, { reason: '' }, '已取消')
+                if (await confirm(t('取消这局？'), t('会告诉已经报名的朋友。'), t('取消这局')))
+                  await act(`/api/events/${code}/cancel`, { reason: '' }, t('已取消'))
               }}
               onAddSlots={() => setSlotSheet(true)}
               onInvite={() => setInviteSheet(true)}
@@ -228,14 +256,18 @@ export default function EventDetail() {
           {/* 大家的时间：日历视图，颜色越深能来的人越多 */}
           {futureSlots.length > 0 && view.participants.length > 0 && event.status === 'open' && (
             <>
-              <SectionTitle title='大家的时间' extra={<Text className='sub small'>颜色越深，能来的人越多</Text>} />
+              <SectionTitle title={t('大家的时间')} extra={<Text className='sub small'>{t('颜色越深，能来的人越多')}</Text>} />
               <Card>
                 <SlotCalendar
                   slots={futureSlots}
                   initialDate={bestDate}
                   badge={(ds) => {
                     const top = Math.max(...ds.map((x) => yesOf(x.id).length))
-                    return { level: top / need, label: top > 0 ? `${top}人` : undefined, mark: ds.some((x) => feasibleSlots.has(x.id)) }
+                    return {
+                      level: top / need,
+                      label: top > 0 ? t('{0}人', top) : undefined,
+                      mark: ds.some((x) => feasibleSlots.has(x.id)),
+                    }
                   }}
                   renderDay={(ds) =>
                     ds.map((x) => {
@@ -250,12 +282,16 @@ export default function EventDetail() {
                               </View>
                               {x.hostLine && <View className='muted'>{x.hostLine}</View>}
                             </View>
-                            {feasibleSlots.has(x.id) ? <Tag tone='ok'>人齐</Tag> : <Text className='sub'>{yes.length} 人可以</Text>}
+                            {feasibleSlots.has(x.id) ? (
+                              <Tag tone='ok'>{t('人齐')}</Tag>
+                            ) : (
+                              <Text className='sub'>{t('{0} 人可以', yes.length)}</Text>
+                            )}
                           </View>
                           {(yes.length > 0 || maybe.length > 0) && (
                             <View className='row gap8 mt8'>
                               <AvatarStack users={yes.map((p) => p.user)} max={8} />
-                              {maybe.length > 0 && <Text className='muted'>另有 {maybe.length} 人看情况</Text>}
+                              {maybe.length > 0 && <Text className='muted'>{t('另有 {0} 人看情况', maybe.length)}</Text>}
                             </View>
                           )}
                         </View>
@@ -268,15 +304,15 @@ export default function EventDetail() {
           )}
 
           {/* 报名情况 */}
-          <SectionTitle title={`谁来（${view.participants.filter((p) => p.intent === 'joined').length}）`} />
+          <SectionTitle title={t('谁来（{0}）', view.participants.filter((p) => p.intent === 'joined').length)} />
           <Card>
             {view.participants.length === 0 ? (
-              <Empty icon='👋' text='还没人回话。丢到群里试试？' />
+              <Empty icon='👋' text={t('还没人回话。丢到群里试试？')} />
             ) : (
               view.participants.map((p) => <ParticipantRow key={p.user.id} p={p} view={view} />)
             )}
             {isHost && view.hostOnly && view.hostOnly.declinedCount > 0 && (
-              <View className='muted mt8'>另有 {view.hostOnly.declinedCount} 人这次来不了（不告诉你是谁）</View>
+              <View className='muted mt8'>{t('另有 {0} 人这次来不了（不告诉你是谁）', view.hostOnly.declinedCount)}</View>
             )}
           </Card>
         </>
@@ -289,7 +325,7 @@ export default function EventDetail() {
           tz={user?.timezone ?? event.hostTimezone}
           onClose={() => setSlotSheet(false)}
           onSave={async (slots) => {
-            const res = await act(`/api/events/${code}/slots`, { slots }, '已添加时间')
+            const res = await act(`/api/events/${code}/slots`, { slots }, t('已添加时间'))
             if (res) setSlotSheet(false)
           }}
         />
@@ -302,7 +338,7 @@ export default function EventDetail() {
           onSend={async (userIds, circleIds) => {
             const res = await act(`/api/events/${code}/invite`, { userIds, circleIds })
             if (res) {
-              toast(res.added ? `已邀请 ${res.added} 人` : '他们都已经在邀请名单里了')
+              toast(res.added ? t('已邀请 {0} 人', res.added) : t('他们都已经在邀请名单里了'))
               setInviteSheet(false)
             }
           }}
@@ -315,17 +351,25 @@ export default function EventDetail() {
 
 /** 用邮件叫还没用 App 的朋友 */
 function EmailInviteSheet(props: { open: boolean; code: string; onClose: () => void }) {
+  useLocale()
   const [text, setText] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const emails = [...new Set(text.split(/[\s,，;；]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))]
-  const REASON: Record<string, string> = { unsubscribed: '对方退订过', duplicate: '24 小时内发过了', rate_limited: '今天发太多了' }
+  const emails = [
+    ...new Set(
+      text
+        .split(/[\s,，;；]+/)
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ]
+  const REASON: Record<string, string> = { unsubscribed: t('对方退订过'), duplicate: t('24 小时内发过了'), rate_limited: t('今天发太多了') }
   const send = async () => {
     setBusy(true)
     try {
       const r = await post<EmailInviteResponse>(`/api/events/${props.code}/email-invite`, { emails, message })
       const skipped = r.skipped.map((s) => `${s.email}（${REASON[s.reason]}）`).join('、')
-      toast(`${r.transport === 'console' ? '演示模式：' : ''}发出 ${r.sent} 封${skipped ? `；跳过 ${skipped}` : ''}`)
+      toast(t('{0}发出 {1} 封{2}', r.transport === 'console' ? t('演示模式：') : '', r.sent, skipped ? t('；跳过 {0}', skipped) : ''))
       if (r.sent > 0) {
         setText('')
         setMessage('')
@@ -338,13 +382,25 @@ function EmailInviteSheet(props: { open: boolean; code: string; onClose: () => v
     }
   }
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='用邮件叫人'>
-      <View className='sub mt4'>仅能发给本空间已验证邮箱的成员。新人请先用空间邀请链接申请加入，每封邮件都带退订链接。</View>
-      <Textarea className='textarea mt12' placeholder='朋友的邮箱，多个用空格或逗号隔开' maxlength={600} value={text} onInput={(e) => setText(e.detail.value)} />
-      <Input className='input mt8' placeholder='附一句话（可选），比如“缺一个，来吗”' maxlength={100} value={message} onInput={(e) => setMessage(e.detail.value)} />
-      <View className='muted mt8'>时间按北京时间写，并附上你那边的时间。夜里不发，攒到早上 8:30。</View>
+    <Sheet open={props.open} onClose={props.onClose} title={t('用邮件叫人')}>
+      <View className='sub mt4'>{t('仅能发给本空间已验证邮箱的成员。新人请先用空间邀请链接申请加入，每封邮件都带退订链接。')}</View>
+      <Textarea
+        className='textarea mt12'
+        placeholder={t('朋友的邮箱，多个用空格或逗号隔开')}
+        maxlength={600}
+        value={text}
+        onInput={(e) => setText(e.detail.value)}
+      />
+      <Input
+        className='input mt8'
+        placeholder={t('附一句话（可选），比如“缺一个，来吗”')}
+        maxlength={100}
+        value={message}
+        onInput={(e) => setMessage(e.detail.value)}
+      />
+      <View className='muted mt8'>{t('时间按北京时间写，并附上你那边的时间。夜里不发，攒到早上 8:30。')}</View>
       <Button kind='primary' block className='mt16' loading={busy} disabled={emails.length === 0} onClick={send}>
-        {emails.length ? `发给 ${emails.length} 个人` : '发邀请'}
+        {emails.length ? t('发给 {0} 个人', emails.length) : t('发邀请')}
       </Button>
     </Sheet>
   )
@@ -353,6 +409,7 @@ function EmailInviteSheet(props: { open: boolean; code: string; onClose: () => v
 // ---------------- 状态横幅 ----------------
 
 function StatusBanner({ view }: { view: EventView }) {
+  useLocale()
   const { event, evaluation } = view
   const isHost = view.viewer.role === 'host'
   const option = (id: string) => event.options.find((o) => o.id === id)
@@ -361,16 +418,16 @@ function StatusBanner({ view }: { view: EventView }) {
   if (event.status === 'cancelled') {
     return (
       <Card className='mt16'>
-        <View className='h3'>这局取消了</View>
-        <View className='sub mt4'>{event.cancelReason || '下次再约～'}</View>
+        <View className='h3'>{t('这局取消了')}</View>
+        <View className='sub mt4'>{event.cancelReason || t('下次再约～')}</View>
       </Card>
     )
   }
   if (event.status === 'expired') {
     return (
       <Card className='mt16'>
-        <View className='h3'>时间都过了，没凑成</View>
-        <View className='sub mt4'>{isHost ? '加几个新时间，再试一次？' : '这次没凑成，下次再约～'}</View>
+        <View className='h3'>{t('时间都过了，没凑成')}</View>
+        <View className='sub mt4'>{isHost ? t('加几个新时间，再试一次？') : t('这次没凑成，下次再约～')}</View>
       </Card>
     )
   }
@@ -380,9 +437,15 @@ function StatusBanner({ view }: { view: EventView }) {
     const check = view.rosterCheck
     return (
       <Card tone={check && !check.ok ? 'warn' : 'ok'} className='mt16'>
-        <View className='h2'>{event.status === 'completed' ? '这局结束了' : check && !check.ok ? `有人临时有事，还差 ${check.stillNeed} 个` : '成了！🎉'}</View>
+        <View className='h2'>
+          {event.status === 'completed'
+            ? t('这局结束了')
+            : check && !check.ok
+              ? t('有人临时有事，还差 {0} 个', check.stillNeed)
+              : t('成了！🎉')}
+        </View>
         <View className='bold mt8'>
-          {o?.emoji} {o?.name} · {s?.line}
+          {o?.emoji} {o ? localizeBuiltinGame(o).name : ''} · {s?.line}
         </View>
         {s?.hostLine && <View className='muted'>{s.hostLine}</View>}
         <View className='mt12'>
@@ -394,7 +457,7 @@ function StatusBanner({ view }: { view: EventView }) {
   if (!evaluation || !evaluation.best) {
     return (
       <Card className='mt16'>
-        <View className='sub'>没有能选的时间了{isHost ? '，加几个新时间吧' : ''}</View>
+        <View className='sub'>{t('没有能选的时间了{0}', isHost ? t('，加几个新时间吧') : '')}</View>
       </Card>
     )
   }
@@ -404,27 +467,32 @@ function StatusBanner({ view }: { view: EventView }) {
   return (
     <Card tone={best.feasible ? 'ok' : 'brand'} className='mt16'>
       <View className='row row--between'>
-        <Text className='eyebrow'>{best.feasible ? '人齐了' : '眼下最有戏'}</Text>
+        <Text className='eyebrow'>{best.feasible ? t('人齐了') : t('眼下最有戏')}</Text>
         <Text className='small bold'>
-          {best.eligibleIds.length}/{o.minPlayers === o.maxPlayers ? o.minPlayers : `${o.minPlayers}–${o.maxPlayers}`} 人
+          {t('{0}/{1}人', best.eligibleIds.length, o.minPlayers === o.maxPlayers ? o.minPlayers : `${o.minPlayers}–${o.maxPlayers}`)}
         </Text>
       </View>
       <View className='h3 mt4'>
-        {o.emoji} {o.name} · {s.line}
+        {o.emoji} {localizeBuiltinGame(o).name} · {s.line}
       </View>
       {s.hostLine && <View className='muted'>{s.hostLine}</View>}
       <View className='mt8'>
         <Progress value={best.eligibleIds.length} total={o.minPlayers} ok={best.feasible} />
       </View>
       <View className={cx('small mt8', best.feasible ? 'ok-text bold' : 'sub')}>
-        {best.feasible ? (isHost ? '人够了，在下面点“就这么定了”' : `人够了，等 ${view.host.nickname} 拍板`) : describeProgress(best)}
-        {best.maybeIds.length > 0 && !best.feasible ? `，还有 ${best.maybeIds.length} 人在看情况` : ''}
+        {best.feasible
+          ? isHost
+            ? t('人够了，在下面点“就这么定了”')
+            : t('人够了，等 {0} 拍板', view.host.nickname)
+          : describeProgress(best, getLocale())}
+        {best.maybeIds.length > 0 && !best.feasible ? t('，还有 {0} 人在看情况', best.maybeIds.length) : ''}
       </View>
     </Card>
   )
 }
 
 function RosterList({ view }: { view: EventView }) {
+  useLocale()
   const final = view.event.final!
   const byId = new Map(view.participants.map((p) => [p.user.id, p]))
   const roleOf = (id: string) => Object.entries(final.roleAssignments).find(([, ids]) => ids.includes(id))?.[0]
@@ -438,15 +506,15 @@ function RosterList({ view }: { view: EventView }) {
             <Avatar user={p.user} size='sm' />
             <Text className='flex1'>
               {p.user.nickname}
-              {id === view.host.id ? <Text className='muted'>（组局）</Text> : null}
+              {id === view.host.id ? <Text className='muted'>{t('（组局）')}</Text> : null}
             </Text>
             {roleOf(id) && <Tag tone='info'>KP/GM</Tag>}
-            {p.finalConfirmed ? <Tag tone='ok'>会来</Tag> : <Text className='muted'>还没点头</Text>}
+            {p.finalConfirmed ? <Tag tone='ok'>{t('会来')}</Tag> : <Text className='muted'>{t('还没点头')}</Text>}
           </View>
         )
       })}
       {final.waitlistIds.length > 0 && (
-        <View className='muted mt8'>候补：{final.waitlistIds.map((id) => byId.get(id)?.user.nickname ?? '?').join('、')}</View>
+        <View className='muted mt8'>{t('候补：{0}', final.waitlistIds.map((id) => byId.get(id)?.user.nickname ?? '?').join('、'))}</View>
       )}
     </View>
   )
@@ -455,15 +523,16 @@ function RosterList({ view }: { view: EventView }) {
 // ---------------- 名单成员 ----------------
 
 function RosterCard(props: { view: EventView; onConfirm: () => void; onWithdraw: () => void }) {
+  useLocale()
   const r = props.view.viewer.response
   if (r?.finalConfirmed) {
     return (
       <Card className='mt12'>
         <View className='row row--between'>
-          <Text className='bold ok-text'>✓ 你说了会来</Text>
+          <Text className='bold ok-text'>{t('✓ 你说了会来')}</Text>
           {props.view.viewer.role !== 'host' && (
             <Text className='link small' onClick={props.onWithdraw}>
-              临时有事
+              {t('临时有事')}
             </Text>
           )}
         </View>
@@ -472,14 +541,14 @@ function RosterCard(props: { view: EventView; onConfirm: () => void; onWithdraw:
   }
   return (
     <Card className='mt12'>
-      <View className='h3'>定了！就等你点个头</View>
-      <View className='sub mt4'>点一下，大家就知道你会来。</View>
+      <View className='h3'>{t('定了！就等你点个头')}</View>
+      <View className='sub mt4'>{t('点一下，大家就知道你会来。')}</View>
       <Button kind='ok' block size='lg' className='mt12' onClick={props.onConfirm}>
-        我会来
+        {t('我会来')}
       </Button>
       <View className='center mt8'>
         <Text className='link small' onClick={props.onWithdraw}>
-          临时有事，来不了
+          {t('临时有事，来不了')}
         </Text>
       </View>
     </Card>
@@ -488,6 +557,7 @@ function RosterCard(props: { view: EventView; onConfirm: () => void; onWithdraw:
 
 /** 报名后温和提示：留个邮箱，成团时能收到邮件（已留过就不显示） */
 function EmailHint() {
+  useLocale()
   const [show, setShow] = useState(false)
   useEffect(() => {
     get<EmailSettingsResponse>('/api/me/email')
@@ -498,33 +568,33 @@ function EmailHint() {
   return (
     <View className='row gap4 mt8' onClick={() => go('/pages/me/index?email=1')}>
       <Icon name='mail' size='sm' color='#FF2B2B' />
-      <Text className='link small'>留个邮箱，成团时告诉你</Text>
+      <Text className='link small'>{t('留个邮箱，成团时告诉你')}</Text>
     </View>
   )
 }
 
-const INTENT_TEXT: Record<ResponseIntent, string> = { joined: '✅ 算上你了', maybe: '🤔 你说看情况', interested: '🙋 你想玩，但时间不太行', declined: '这次就不了，没关系' }
+const INTENT_TEXT: Record<ResponseIntent, string> = {
+  joined: '✅ 算上你了',
+  maybe: '🤔 你说看情况',
+  interested: '🙋 你想玩，但时间不太行',
+  declined: '这次就不了，没关系',
+}
 
 function MyResponse(props: { view: EventView; onEdit: () => void; onWithdraw: () => void }) {
+  useLocale()
   const r = props.view.viewer.response!
   const yesSlots = props.view.event.slots.filter((s) => r.availability[s.id] === 'yes')
   return (
     <Card className='mt12'>
       <View className='row row--between'>
-        <Text className={cx('bold', r.intent === 'joined' && 'ok-text')}>
-          {INTENT_TEXT[r.intent]}
-        </Text>
+        <Text className={cx('bold', r.intent === 'joined' && 'ok-text')}>{t(INTENT_TEXT[r.intent])}</Text>
         {props.view.viewer.canRespond && (
           <Text className='link' onClick={props.onEdit}>
-            {r.intent === 'declined' ? '改主意了' : '改一下'}
+            {r.intent === 'declined' ? t('改主意了') : t('改一下')}
           </Text>
         )}
       </View>
-      {r.intent === 'joined' && (
-        <View className='sub mt4'>
-          可以的时间：{yesSlots.map((s) => s.line).join('；')}
-        </View>
-      )}
+      {r.intent === 'joined' && <View className='sub mt4'>{t('可以的时间：{0}', yesSlots.map((s) => s.line).join('；'))}</View>}
       {r.intent === 'joined' && <EmailHint />}
     </Card>
   )
@@ -532,18 +602,21 @@ function MyResponse(props: { view: EventView; onEdit: () => void; onWithdraw: ()
 
 // ---------------- 报名面板 ----------------
 
-/** dateLabel 形如“10/24 周六”（已按查看者时区格式化） */
-const isWeekendLocal = (dateLabel: string) => /周六|周日/.test(dateLabel)
-
 function RespondPanel(props: {
   view: EventView
-  onSubmit: (body: { intent: ResponseIntent; availability: Record<string, SlotAvailability>; optionIds: string[]; roles: string[]; comment: string }, okMsg: string) => Promise<void>
+  onSubmit: (
+    body: { intent: ResponseIntent; availability: Record<string, SlotAvailability>; optionIds: string[]; roles: string[]; comment: string },
+    okMsg: string,
+  ) => Promise<void>
   onCancel?: () => void
 }) {
+  useLocale()
   const { event, viewer } = props.view
   const prev = viewer.response
   const slots = event.slots.filter((s) => !s.isPast)
-  const [avail, setAvail] = useState<Record<string, SlotAvailability>>(() => (prev?.intent === 'declined' ? {} : (prev?.availability ?? {})))
+  const [avail, setAvail] = useState<Record<string, SlotAvailability>>(() =>
+    prev?.intent === 'declined' ? {} : (prev?.availability ?? {}),
+  )
   const [optionIds, setOptionIds] = useState<string[]>(prev?.optionIds ?? [])
   const [gm, setGm] = useState(prev?.roles.includes('gm') ?? false)
   const [comment, setComment] = useState(prev?.comment ?? '')
@@ -553,34 +626,43 @@ function RespondPanel(props: {
   const single = slots.length === 1
   const anyYes = Object.values(avail).includes('yes') || single
 
-  const setSlot = (id: string, v: SlotAvailability) => setAvail((a) => {
-    const next = { ...a }
-    if (next[id] === v) delete next[id]
-    else next[id] = v
-    return next
-  })
+  const setSlot = (id: string, v: SlotAvailability) =>
+    setAvail((a) => {
+      const next = { ...a }
+      if (next[id] === v) delete next[id]
+      else next[id] = v
+      return next
+    })
 
   const submit = async (intent: ResponseIntent, okMsg: string) => {
     setBusy(true)
     const availability = single && intent === 'joined' && !avail[slots[0]!.id] ? { [slots[0]!.id]: 'yes' as const } : avail
-    await props.onSubmit({ intent, availability: intent === 'declined' ? {} : availability, optionIds, roles: gm ? ['gm'] : [], comment: comment.trim() }, okMsg)
+    await props.onSubmit(
+      { intent, availability: intent === 'declined' ? {} : availability, optionIds, roles: gm ? ['gm'] : [], comment: comment.trim() },
+      okMsg,
+    )
     setBusy(false)
   }
 
   return (
     <Card className='mt12'>
-      <View className='h2'>{prev ? '改一下' : '这局算你一个吗？'}</View>
+      <View className='h2'>{prev ? t('改一下') : t('这局算你一个吗？')}</View>
 
       {!single && slots.length > 3 && (
         <View className='row wrap gap8 mt12'>
           <Chip small onClick={() => setAvail(Object.fromEntries(slots.map((x) => [x.id, 'yes' as const])))}>
-            全都可以
+            {t('全都可以')}
           </Chip>
-          <Chip small onClick={() => setAvail(Object.fromEntries(slots.filter((x) => isWeekendLocal(x.dateLabel)).map((x) => [x.id, 'yes' as const])))}>
-            周末都行
+          <Chip
+            small
+            onClick={() =>
+              setAvail(Object.fromEntries(slots.filter((x) => isWeekendLocalDate(x.localDate)).map((x) => [x.id, 'yes' as const])))
+            }
+          >
+            {t('周末都行')}
           </Chip>
           <Chip small onClick={() => setAvail({})}>
-            清空
+            {t('清空')}
           </Chip>
         </View>
       )}
@@ -591,7 +673,7 @@ function RespondPanel(props: {
             badge={(ds) => {
               const yes = ds.some((x) => avail[x.id] === 'yes')
               const maybe = ds.some((x) => avail[x.id] === 'maybe')
-              return { level: yes ? 1 : maybe ? 0.3 : 0, label: ds.length > 1 ? `${ds.length}场` : undefined }
+              return { level: yes ? 1 : maybe ? 0.3 : 0, label: ds.length > 1 ? t('{0}场', ds.length) : undefined }
             }}
             renderDay={(ds) =>
               ds.map((x) => (
@@ -599,11 +681,11 @@ function RespondPanel(props: {
                   <View className='bold'>
                     {x.dateLabel} {x.timeLabel}
                   </View>
-                  {x.hostLine && <View className='muted'>发起人：{x.hostLine.replace(/^\S+时间 /, '')}</View>}
+                  {x.hostLine && <View className='muted'>{t('发起人：{0}', x.hostLine.replace(/^\S+时间 /, ''))}</View>}
                   <View className='avail mt8'>
                     {(['yes', 'maybe', 'no'] as const).map((v) => (
                       <View key={v} className={cx('avail__btn', avail[x.id] === v && `avail__btn--${v}`)} onClick={() => setSlot(x.id, v)}>
-                        {v === 'yes' ? '可以' : v === 'maybe' ? '看情况' : '不行'}
+                        {v === 'yes' ? t('可以') : v === 'maybe' ? t('看情况') : t('不行')}
                       </View>
                     ))}
                   </View>
@@ -620,12 +702,12 @@ function RespondPanel(props: {
               <View className='bold'>{s.line}</View>
               <View className='muted'>
                 {s.zoneLabel} {s.zoneAbbr}
-                {s.hostLine ? ` · 发起人：${s.hostLine.replace(/^\S+时间 /, '')}` : ''}
+                {s.hostLine ? t(' · 发起人：{0}', s.hostLine.replace(/^\S+时间 /, '')) : ''}
               </View>
               <View className='avail mt8'>
                 {(['yes', 'maybe', 'no'] as const).map((v) => (
                   <View key={v} className={cx('avail__btn', avail[s.id] === v && `avail__btn--${v}`)} onClick={() => setSlot(s.id, v)}>
-                    {v === 'yes' ? '可以' : v === 'maybe' ? '看情况' : '不行'}
+                    {v === 'yes' ? t('可以') : v === 'maybe' ? t('看情况') : t('不行')}
                   </View>
                 ))}
               </View>
@@ -638,17 +720,17 @@ function RespondPanel(props: {
           <View className='bold'>{slots[0].line}</View>
           <View className='muted'>
             {slots[0].zoneLabel} {slots[0].zoneAbbr}
-            {slots[0].hostLine ? ` · 发起人：${slots[0].hostLine.replace(/^\S+时间 /, '')}` : ''}
+            {slots[0].hostLine ? t(' · 发起人：{0}', slots[0].hostLine.replace(/^\S+时间 /, '')) : ''}
           </View>
         </View>
       )}
 
       {event.options.length > 1 && (
         <View className='mt12'>
-          <View className='field__label'>想玩哪个？</View>
+          <View className='field__label'>{t('想玩哪个？')}</View>
           <View className='row wrap gap8'>
             <Chip small on={optionIds.length === 0} onClick={() => setOptionIds([])}>
-              都行
+              {t('都行')}
             </Chip>
             {event.options.map((o) => (
               <Chip
@@ -657,7 +739,7 @@ function RespondPanel(props: {
                 on={optionIds.includes(o.id)}
                 onClick={() => setOptionIds(optionIds.includes(o.id) ? optionIds.filter((x) => x !== o.id) : [...optionIds, o.id])}
               >
-                {o.emoji} {o.name}
+                {o.emoji} {localizeBuiltinGame(o).name}
               </Chip>
             ))}
           </View>
@@ -666,41 +748,54 @@ function RespondPanel(props: {
 
       {needsGm && (
         <View className='switch-row mt8'>
-          <Text>我能当 KP/GM</Text>
-          <Switch color='#F2652D' checked={gm} onChange={(e) => setGm(e.detail.value)} />
+          <Text>{t('我能当 KP/GM')}</Text>
+          <Switch color='#FF2B2B' checked={gm} onChange={(e) => setGm(e.detail.value)} />
         </View>
       )}
 
       {showComment || comment ? (
-        <Input className='input mt12' placeholder='留句话，比如“可能晚到半小时”' maxlength={100} value={comment} onInput={(e) => setComment(e.detail.value)} />
+        <Input
+          className='input mt12'
+          placeholder={t('留句话，比如“可能晚到半小时”')}
+          maxlength={100}
+          value={comment}
+          onInput={(e) => setComment(e.detail.value)}
+        />
       ) : (
         <View className='mt12'>
           <Text className='link small' onClick={() => setShowComment(true)}>
-            ＋ 留句话
+            {t('＋ 留句话')}
           </Text>
         </View>
       )}
 
       <View className='row gap8 mt16'>
-        <Button kind='primary' size='lg' className='flex1' disabled={!anyYes} loading={busy} onClick={() => submit('joined', '算上你了！人齐会叫你')}>
-          算我一个
+        <Button
+          kind='primary'
+          size='lg'
+          className='flex1'
+          disabled={!anyYes}
+          loading={busy}
+          onClick={() => submit('joined', t('算上你了！人齐会叫你'))}
+        >
+          {t('算我一个')}
         </Button>
-        <Button size='lg' disabled={busy} onClick={() => submit('maybe', '好，先记你“看情况”')}>
-          看情况
+        <Button size='lg' disabled={busy} onClick={() => submit('maybe', t('好，先记你“看情况”'))}>
+          {t('看情况')}
         </Button>
       </View>
       <View className='row row--between mt12'>
-        <Text className='link small' onClick={() => !busy && submit('interested', '收到，组局的人会知道你想玩')}>
-          时间都不行
+        <Text className='link small' onClick={() => !busy && submit('interested', t('收到，组局的人会知道你想玩'))}>
+          {t('时间都不行')}
         </Text>
-        <Text className='muted' onClick={() => !busy && submit('declined', '收到，下次一定（真的）')}>
-          这次就不了
+        <Text className='muted' onClick={() => !busy && submit('declined', t('收到，下次一定（真的）'))}>
+          {t('这次就不了')}
         </Text>
       </View>
       {props.onCancel && (
         <View className='center mt12'>
           <Text className='link small' onClick={props.onCancel}>
-            不改了
+            {t('不改了')}
           </Text>
         </View>
       )}
@@ -711,6 +806,7 @@ function RespondPanel(props: {
 // ---------------- 参与者 ----------------
 
 function ParticipantRow({ p, view }: { p: ParticipantView; view: EventView }) {
+  useLocale()
   const isHostViewer = view.viewer.role === 'host'
   const isHostRow = p.user.id === view.host.id
   const isMe = p.user.id === view.viewer.response?.userId
@@ -721,29 +817,31 @@ function ParticipantRow({ p, view }: { p: ParticipantView; view: EventView }) {
       <View className='flex1'>
         <View className='row gap8 wrap'>
           <Text className='bold'>{p.user.nickname}</Text>
-          {isHostRow && <Text className='muted'>组局</Text>}
-          {p.roles.includes('gm') && <Tag tone='info'>可当 KP</Tag>}
+          {isHostRow && <Text className='muted'>{t('组局')}</Text>}
+          {p.roles.includes('gm') && <Tag tone='info'>{t('可当 KP')}</Tag>}
         </View>
         <View className='muted'>
-          {optionNames.length > 0 ? `只想玩 ${optionNames.join('/')}` : ''}
+          {optionNames.length > 0 ? t('只想玩 {0}', optionNames.join('/')) : ''}
           {p.comment ? `${optionNames.length ? ' · ' : ''}“${p.comment}”` : ''}
         </View>
       </View>
       <View className='col gap4' style={{ alignItems: 'flex-end' }}>
-        <Tag tone={p.intent === 'joined' ? 'ok' : p.intent === 'maybe' ? 'warn' : 'info'}>{p.intent === 'joined' ? '来' : p.intent === 'maybe' ? '看情况' : '想玩'}</Tag>
+        <Tag tone={p.intent === 'joined' ? 'ok' : p.intent === 'maybe' ? 'warn' : 'info'}>
+          {p.intent === 'joined' ? t('来') : p.intent === 'maybe' ? t('看情况') : t('想玩')}
+        </Tag>
         {isHostViewer && !isHostRow && !isMe && (
           <Text
             className='link small'
             onClick={async () => {
               try {
                 const r = await post<{ status: string }>('/api/friends', { handle: p.user.handle })
-                toast(r.status === 'accepted' ? '你们已经是好友' : '已发送好友请求')
+                toast(r.status === 'accepted' ? t('你们已经是好友') : t('已发送好友请求'))
               } catch (e) {
                 toastError(e)
               }
             }}
           >
-            加好友
+            {t('加好友')}
           </Text>
         )}
       </View>
@@ -764,6 +862,7 @@ function HostPanel(props: {
   onEmail: () => void
   onShare: () => void
 }) {
+  useLocale()
   const { event, evaluation, hostOnly, rosterCheck } = props.view
   const nameOf = new Map(props.view.participants.map((p) => [p.user.id, p.user.nickname]))
   // 只列可以开局的组合（人还没齐时，上面的进度框已经说清楚了）
@@ -774,7 +873,7 @@ function HostPanel(props: {
 
   return (
     <>
-      <SectionTitle title='组局人' extra={<Text className='sub small'>只有你看得到</Text>} />
+      <SectionTitle title={t('组局人')} extra={<Text className='sub small'>{t('只有你看得到')}</Text>} />
       <Card>
         {event.status === 'open' && (
           <>
@@ -786,16 +885,20 @@ function HostPanel(props: {
                   <View className='row row--between'>
                     <View className='flex1'>
                       <View className='bold'>
-                        {o.emoji} {o.name} · {s.line}
+                        {o.emoji} {localizeBuiltinGame(o).name} · {s.line}
                       </View>
                       <View className={cx('small', c.feasible ? 'ok-text' : 'sub')}>
-                        {c.eligibleIds.length} 人可以 · {describeProgress(c)}
-                        {c.waitlist.length > 0 ? ` · ${c.waitlist.length} 人候补` : ''}
+                        {t(
+                          '{0} 人可以 · {1}{2}',
+                          c.eligibleIds.length,
+                          describeProgress(c, getLocale()),
+                          c.waitlist.length > 0 ? t(' · {0} 人候补', c.waitlist.length) : '',
+                        )}
                       </View>
                     </View>
                     {c.feasible && (
                       <Button kind='ok' size='sm' onClick={() => props.onConfirm(c)}>
-                        就这么定了
+                        {t('就这么定了')}
                       </Button>
                     )}
                   </View>
@@ -809,27 +912,29 @@ function HostPanel(props: {
           <>
             {rosterCheck && !rosterCheck.ok && event.final.waitlistIds.length > 0 && (
               <View className='mb8'>
-                <View className='field__label'>从候补里叫人</View>
+                <View className='field__label'>{t('从候补里叫人')}</View>
                 {event.final.waitlistIds.map((id) => (
                   <View key={id} className='row row--between slot'>
                     <Text>{nameOf.get(id) ?? '?'}</Text>
                     <Button kind='ok' size='sm' onClick={() => props.onPromote(id)}>
-                      叫 TA 补上
+                      {t('叫 TA 补上')}
                     </Button>
                   </View>
                 ))}
               </View>
             )}
             {rosterCheck && !rosterCheck.ok && event.final.waitlistIds.length === 0 && (
-              <View className='sub'>候补里没人了：再叫几个人，或者重新开放换个时间。</View>
+              <View className='sub'>{t('候补里没人了：再叫几个人，或者重新开放换个时间。')}</View>
             )}
           </>
         )}
 
         {hasTop && <View className='divider' />}
         <View className='sub'>
-          {invitees.length === 0 ? '没有单独叫人，空间成员可凭链接报名' : `单独叫了 ${invitees.length} 人，${invitees.filter((i) => i.responded).length} 人回了话`}
-          {hostOnly && hostOnly.declinedCount > 0 ? `，${hostOnly.declinedCount} 人这次来不了` : ''}
+          {invitees.length === 0
+            ? t('没有单独叫人，空间成员可凭链接报名')
+            : t('单独叫了 {0} 人，{1} 人回了话', invitees.length, invitees.filter((i) => i.responded).length)}
+          {hostOnly && hostOnly.declinedCount > 0 ? t('，{0} 人这次来不了', hostOnly.declinedCount) : ''}
         </View>
         {invitees.length > 0 && (
           <View className='mt8'>
@@ -842,7 +947,7 @@ function HostPanel(props: {
               <View className='icon-btn'>
                 <Icon name='share' />
               </View>
-              <Text>分享</Text>
+              <Text>{t('分享')}</Text>
             </View>
           )}
           {live && (
@@ -850,7 +955,7 @@ function HostPanel(props: {
               <View className='icon-btn'>
                 <Icon name='userPlus' />
               </View>
-              <Text>再叫人</Text>
+              <Text>{t('再叫人')}</Text>
             </View>
           )}
           {live && (
@@ -858,7 +963,7 @@ function HostPanel(props: {
               <View className='icon-btn'>
                 <Icon name='mail' />
               </View>
-              <Text>发邮件</Text>
+              <Text>{t('发邮件')}</Text>
             </View>
           )}
           {(event.status === 'open' || event.status === 'expired') && (
@@ -866,24 +971,24 @@ function HostPanel(props: {
               <View className='icon-btn'>
                 <Icon name='clock' />
               </View>
-              <Text>加时间</Text>
+              <Text>{t('加时间')}</Text>
             </View>
           )}
           {(live || event.status === 'expired') && (
             <View
               className='tool'
               onClick={async () => {
-                const items = event.status === 'confirmed' ? ['重新开放报名', '取消这局'] : ['取消这局']
+                const items = event.status === 'confirmed' ? [t('重新开放报名'), t('取消这局')] : [t('取消这局')]
                 const r = await Taro.showActionSheet({ itemList: items }).catch(() => null)
                 if (!r) return
-                if (items[r.tapIndex] === '重新开放报名') props.onReopen()
+                if (items[r.tapIndex] === t('重新开放报名')) props.onReopen()
                 else props.onCancel()
               }}
             >
               <View className='icon-btn'>
                 <Icon name='more' />
               </View>
-              <Text>更多</Text>
+              <Text>{t('更多')}</Text>
             </View>
           )}
         </View>
@@ -895,14 +1000,24 @@ function HostPanel(props: {
 // ---------------- 弹层 ----------------
 
 function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView; created: boolean }) {
+  useLocale()
   const { event, host } = props.view
   const url = appUrl(eventPath(event.code))
   const first = event.slots.find((s) => !s.isPast)
-  const games = event.options.map((o) => `${o.emoji}${o.name}`).join(' / ')
-  const text = `【${APP_NAME}】${host.nickname} 约你：${event.title}\n${games}${first ? ` · ${first.line}${first.zoneAbbr ? ` ${first.zoneAbbr}` : ''}${event.slots.length > 1 ? ` 等 ${event.slots.length} 个时间` : ''}` : ''}\n有空就来，没空不用回 👉`
+  const games = event.options.map((o) => `${o.emoji}${localizeBuiltinGame(o).name}`).join(' / ')
+  const text = t(
+    '【{0}】{1} 约你：{2}\n{3}{4}\n有空就来，没空不用回 👉',
+    APP_NAME,
+    host.nickname,
+    event.title,
+    games,
+    first
+      ? ` · ${first.line}${first.zoneAbbr ? ` ${first.zoneAbbr}` : ''}${event.slots.length > 1 ? t(' 等 {0} 个时间', event.slots.length) : ''}`
+      : '',
+  )
   return (
-    <Sheet open={props.open} onClose={props.onClose} title={props.created ? '局开好了，丢到群里吧' : '叫上朋友'}>
-      <View className='sub mt4'>已加入本空间的朋友登录后即可报名，时间会自动换成他们那边的。</View>
+    <Sheet open={props.open} onClose={props.onClose} title={props.created ? t('局开好了，丢到群里吧') : t('叫上朋友')}>
+      <View className='sub mt4'>{t('已加入本空间的朋友登录后即可报名，时间会自动换成他们那边的。')}</View>
       <View className='share-text mt12'>
         {text}
         {'\n'}
@@ -910,19 +1025,21 @@ function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView
       </View>
       {isH5 ? (
         <View className='row gap8 mt16'>
-          <Button kind='primary' className='flex1' onClick={() => void copyText(`${text}\n${url}`, '复制好了，去群里粘贴吧')}>
-            复制这段话
+          <Button kind='primary' className='flex1' onClick={() => void copyText(`${text}\n${url}`, t('复制好了，去群里粘贴吧'))}>
+            {t('复制这段话')}
           </Button>
-          <Button kind='outline' onClick={() => void shareText(event.title, text, url)}>更多</Button>
+          <Button kind='outline' onClick={() => void shareText(event.title, text, url)}>
+            {t('更多')}
+          </Button>
         </View>
       ) : (
         <TaroButton className='btn btn--primary btn--block mt16' openType='share'>
-          发给微信好友 / 群
+          {t('发给微信好友 / 群')}
         </TaroButton>
       )}
       <View className='center mt12'>
         <Text className='link small' onClick={props.onClose}>
-          先这样
+          {t('先这样')}
         </Text>
       </View>
     </Sheet>
@@ -930,40 +1047,60 @@ function ShareSheet(props: { open: boolean; onClose: () => void; view: EventView
 }
 
 function AddSlotsSheet(props: { open: boolean; tz: string; onClose: () => void; onSave: (slots: SlotInput[]) => void }) {
+  useLocale()
   const [slots, setSlots] = useState<SlotInput[]>([])
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='加几个时间'>
+    <Sheet open={props.open} onClose={props.onClose} title={t('加几个时间')}>
       <View className='mt12'>
         <SlotEditor tz={props.tz} durationMin={120} value={slots} onChange={setSlots} />
       </View>
       <Button kind='primary' block className='mt16' disabled={slots.length === 0} onClick={() => props.onSave(slots)}>
-        添加 {slots.length || ''} 个时间
+        {t('添加{0}个时间', slots.length || '')}
       </Button>
     </Sheet>
   )
 }
 
-function InviteSheet(props: { open: boolean; invitedIds: string[]; onClose: () => void; onSend: (userIds: string[], circleIds: string[]) => void }) {
+function InviteSheet(props: {
+  open: boolean
+  invitedIds: string[]
+  onClose: () => void
+  onSend: (userIds: string[], circleIds: string[]) => void
+}) {
+  const locale = useLocale()
   const [friends, setFriends] = useState<FriendsResponse['friends']>([])
   const [circles, setCircles] = useState<CirclesResponse['circles']>([])
   const [ids, setIds] = useState<string[]>([])
   const [circleIds, setCircleIds] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
   useEffect(() => {
     if (!props.open) return
     setIds([])
     setCircleIds([])
+  }, [props.open])
+  useEffect(() => {
+    if (!props.open) return
+    let current = true
+    setLoading(true)
     Promise.all([get<FriendsResponse>('/api/friends'), get<CirclesResponse>('/api/circles')])
       .then(([f, c]) => {
+        if (!current) return
         setFriends(f.friends)
         setCircles(c.circles)
       })
       .catch(toastError)
-  }, [props.open])
+      .finally(() => {
+        if (current) setLoading(false)
+      })
+    return () => {
+      current = false
+    }
+  }, [props.open, locale])
   const candidates = useMemo(() => friends.filter((f) => !props.invitedIds.includes(f.user.id)), [friends, props.invitedIds])
   const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='再叫几个人'>
-      <View className='sub mt4'>新邀请的人会收到一条通知，之前邀请过的人不会被重复打扰。</View>
+    <Sheet open={props.open} onClose={props.onClose} title={t('再叫几个人')}>
+      <View className='sub mt4'>{t('新邀请的人会收到一条通知，之前邀请过的人不会被重复打扰。')}</View>
       {circles.length > 0 && (
         <View className='row wrap gap8 mt12'>
           {circles.map((c) => (
@@ -974,15 +1111,22 @@ function InviteSheet(props: { open: boolean; invitedIds: string[]; onClose: () =
         </View>
       )}
       <View className='row wrap gap8 mt12'>
-        {candidates.length === 0 && <Text className='muted'>好友都已经邀请过了</Text>}
+        {loading && <Loading />}
+        {!loading && candidates.length === 0 && <Text className='muted'>{t('好友都已经邀请过了')}</Text>}
         {candidates.map((f) => (
           <Chip key={f.user.id} small on={ids.includes(f.user.id)} onClick={() => setIds(toggle(ids, f.user.id))}>
             {f.user.avatar} {f.user.nickname}
           </Chip>
         ))}
       </View>
-      <Button kind='primary' block className='mt16' disabled={ids.length + circleIds.length === 0} onClick={() => props.onSend(ids, circleIds)}>
-        叫他们
+      <Button
+        kind='primary'
+        block
+        className='mt16'
+        disabled={ids.length + circleIds.length === 0}
+        onClick={() => props.onSend(ids, circleIds)}
+      >
+        {t('叫他们')}
       </Button>
     </Sheet>
   )

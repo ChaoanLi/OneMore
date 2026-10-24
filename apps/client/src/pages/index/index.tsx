@@ -1,5 +1,5 @@
+import { t, useLocale, useLocaleDidShow, localizeBuiltinGame } from '../../lib/i18n'
 import { Text, View } from '@tarojs/components'
-import { useDidShow } from '@tarojs/taro'
 import { useState } from 'react'
 import type { EventCard, InterestView, InterestsResponse, MyEventsResponse } from '@couju/core'
 import { GamesSheet, shouldOfferSetup } from '../../components/Games'
@@ -8,12 +8,13 @@ import { Logo } from '../../components/Logo'
 import { Page } from '../../components/Page'
 import { Avatar, Button, Card, Progress, SectionTitle, Tag } from '../../components/ui'
 import { del, get, post } from '../../lib/api'
-import { APP_NAME, APP_NAME_EN } from '../../lib/brand'
+import { APP_NAME, tagline } from '../../lib/brand'
 import { setPrefill } from '../../lib/draftStore'
 import { bootSession, getSession, refreshMe, requireUser, useSession } from '../../lib/session'
 import { confirm, eventPath, go, toastError } from '../../lib/ui'
 
 export default function Index() {
+  useLocale()
   const { user, ready, unread } = useSession()
   const [events, setEvents] = useState<MyEventsResponse | null>(null)
   const [interests, setInterests] = useState<InterestsResponse | null>(null)
@@ -33,7 +34,7 @@ export default function Index() {
       toastError(err)
     }
   }
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     void load()
   })
 
@@ -67,8 +68,8 @@ export default function Index() {
       <View className='hero'>
         <Logo size={user ? 'md' : 'lg'} />
         <View className='hero__name'>{APP_NAME}</View>
-        <View className='hero__en'>{APP_NAME_EN}</View>
-        {ready && !user && <View className='lead mt8'>挑时间 → 发链接 → 人齐就开</View>}
+        <View className='hero__tagline'>{tagline()}</View>
+        {ready && !user && <View className='lead mt8'>{t('挑时间 → 发链接 → 人齐就开')}</View>}
       </View>
 
       <View className='mt24'>
@@ -76,24 +77,24 @@ export default function Index() {
           <View className='entry__icon'>
             <Icon name='plus' color='#fff' />
           </View>
-          <View className='h3 flex1'>我来组一局</View>
+          <View className='h3 flex1'>{t('我来组一局')}</View>
           <Icon name='right' />
         </View>
         <View className='entry-pair'>
           <View className='entry-mini' onClick={() => start('/pages/interest/create')}>
             <Icon name='hand' />
-            <Text>先举个手</Text>
+            <Text>{t('先举个手')}</Text>
           </View>
           <View className='entry-mini' onClick={() => start('/pages/ai/index')}>
             <Icon name='chat' />
-            <Text>随口说一句</Text>
+            <Text>{t('随口说一句')}</Text>
           </View>
         </View>
       </View>
 
       {user && allInterests.length > 0 && (
         <>
-          <SectionTitle title='有人举手了' />
+          <SectionTitle title={t('有人举手了')} />
           {allInterests.map((i) => (
             <InterestCard key={i.id} interest={i} onChange={updateInterest} onRemoved={() => void load()} />
           ))}
@@ -102,7 +103,7 @@ export default function Index() {
 
       {user && events && (events.active.length > 0 || events.past.length > 0) && (
         <>
-          <SectionTitle title='最近的局' />
+          <SectionTitle title={t('最近的局')} />
           {events.active.map((e) => (
             <EventRow key={e.code} card={e} />
           ))}
@@ -122,12 +123,13 @@ function upsert(list: InterestView[], item: InterestView): InterestView[] {
 }
 
 function EventRow({ card }: { card: EventCard }) {
+  useLocale()
   const tone = card.status === 'confirmed' ? 'ok' : card.status === 'open' ? 'brand' : 'gray'
   return (
     <View className='episode' onClick={() => go(eventPath(card.code))}>
       <View className='row gap8'>
         <Tag tone={tone}>{card.statusText}</Tag>
-        {card.needsMyResponse && <Tag tone='warn'>等你回话</Tag>}
+        {card.needsMyResponse && <Tag tone='warn'>{t('等你回话')}</Tag>}
       </View>
       <View className='episode__title'>
         {card.options.map((o) => o.emoji).join('')} {card.title}
@@ -141,6 +143,7 @@ function EventRow({ card }: { card: EventCard }) {
 }
 
 function InterestCard(props: { interest: InterestView; onChange: (i: InterestView) => void; onRemoved: () => void }) {
+  useLocale()
   const i = props.interest
   const [busy, setBusy] = useState(false)
   const isParticipant = i.isMine || i.joinedByMe
@@ -161,7 +164,9 @@ function InterestCard(props: { interest: InterestView; onChange: (i: InterestVie
       <View className='row gap12'>
         <Avatar user={i.owner} size='sm' />
         <Text className='flex1 bold'>
-          {i.isMine ? '我' : i.owner.nickname} 想玩 {i.emoji} {i.name}
+          {i.isMine
+            ? t('我想玩 {0} {1}', i.emoji, localizeBuiltinGame(i).name)
+            : t('{0} 想玩 {1} {2}', i.owner.nickname, i.emoji, localizeBuiltinGame(i).name)}
         </Text>
         <Text className={i.ready ? 'small red-text bold' : 'small sub'}>
           {i.headcount}/{i.minPlayers}
@@ -173,7 +178,7 @@ function InterestCard(props: { interest: InterestView; onChange: (i: InterestVie
       <View className='row gap8 mt12'>
         {i.status === 'converted' && i.convertedEventCode && (
           <Button size='sm' kind='primary' onClick={() => go(eventPath(i.convertedEventCode!))}>
-            去看看
+            {t('去看看')}
           </Button>
         )}
         {i.status === 'active' && i.ready && isParticipant && (
@@ -185,7 +190,7 @@ function InterestCard(props: { interest: InterestView; onChange: (i: InterestVie
               go('/pages/event/create?from=interest')
             }}
           >
-            人齐了，定时间
+            {t('人齐了，定时间')}
           </Button>
         )}
         {i.status === 'active' && !i.isMine && !i.joinedByMe && (
@@ -195,14 +200,14 @@ function InterestCard(props: { interest: InterestView; onChange: (i: InterestVie
         )}
         {i.status === 'active' && i.joinedByMe && (
           <Button size='sm' kind='outline' loading={busy} onClick={() => act(() => del(`/api/interests/${i.id}/join`))}>
-            已 +1
+            {t('已 +1')}
           </Button>
         )}
         {i.status === 'active' && i.isMine && (
           <View
             className='icon-btn icon-btn--bare'
             onClick={async () => {
-              if (!(await confirm('把手放下？', '朋友们就看不到了。'))) return
+              if (!(await confirm(t('把手放下？'), t('朋友们就看不到了。')))) return
               await post(`/api/interests/${i.id}/withdraw`).catch(toastError)
               props.onRemoved()
             }}

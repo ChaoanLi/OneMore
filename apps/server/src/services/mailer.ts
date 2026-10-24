@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer'
-import { DEFAULT_TIMEZONE, quietHoursSendAt, interestVisibleTo, type Interest } from '@couju/core'
+import { translate, type Locale, DEFAULT_TIMEZONE, quietHoursSendAt, interestVisibleTo, type Interest } from '@couju/core'
 import type { OutboxEmail, Store } from '../store'
 import { newId } from '../util'
 
@@ -154,12 +154,15 @@ export class Mailer {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 export function renderEmail(p: {
+  locale?: Locale
   heading: string
   lines: string[]
   cta?: { text: string; url: string }
   footer: string
   unsubUrl?: string
 }): { text: string; html: string } {
+  const locale = p.locale ?? 'zh-CN'
+  const unsubscribeLabel = translate(locale, '不想再收到这类邮件')
   const text = [
     p.heading,
     '',
@@ -168,12 +171,12 @@ export function renderEmail(p: {
     '',
     '—',
     p.footer,
-    ...(p.unsubUrl ? [`不想再收到这类邮件：${p.unsubUrl}`] : []),
+    ...(p.unsubUrl ? [`${unsubscribeLabel}: ${p.unsubUrl}`] : []),
   ].join('\n')
 
-  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#ffffff;">
+  const html = `<!doctype html><html lang="${locale}"><body style="margin:0;padding:0;background:#ffffff;">
 <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color:#1f1f1f;line-height:1.6;">
-  <div style="font-size:15px;font-weight:800;color:#ff2b2b;letter-spacing:1px;">算我一个 <span style="color:#a8a8a8;font-weight:600;letter-spacing:2px;">OneMore</span></div>
+  <div style="font-size:15px;font-weight:800;color:#ff2b2b;letter-spacing:1px;">${locale === 'en' ? '' : '算我一个 '}<span style="color:#a8a8a8;font-weight:600;letter-spacing:2px;">OneMore</span></div>
   <div style="margin-top:18px;font-size:22px;font-weight:700;color:#141414;">${esc(p.heading)}</div>
   ${p.lines.map((l) => `<div style="margin-top:8px;font-size:15px;color:#4a4a4a;">${esc(l)}</div>`).join('')}
   ${
@@ -182,7 +185,7 @@ export function renderEmail(p: {
       : ''
   }
   <div style="margin-top:32px;padding-top:14px;border-top:1px solid #ececec;font-size:12px;color:#a8a8a8;">
-    ${esc(p.footer)}${p.unsubUrl ? `<br><a href="${esc(p.unsubUrl)}" style="color:#a8a8a8;">不想再收到这类邮件</a>` : ''}
+    ${esc(p.footer)}${p.unsubUrl ? `<br><a href="${esc(p.unsubUrl)}" style="color:#a8a8a8;">${esc(unsubscribeLabel)}</a>` : ''}
   </div>
 </div></body></html>`
   return { text, html }

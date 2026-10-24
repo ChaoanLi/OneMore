@@ -1,3 +1,4 @@
+import { t, useLocale, localizeBuiltinGame } from '../../lib/i18n'
 import { Input, Switch, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useLoad } from '@tarojs/taro'
 import { useEffect, useMemo, useState } from 'react'
@@ -43,6 +44,7 @@ const fromMyGame = (g: MyGame): OptionDraft => ({ ...g })
 type InviteStrategy = 'favorites' | 'friends' | 'circles' | 'link' | null
 
 export default function CreateEvent() {
+  const locale = useLocale()
   const { user } = useSession()
   const tz = user?.timezone ?? DEFAULT_TIMEZONE
   const { games: myGames } = useMyGames()
@@ -121,7 +123,7 @@ export default function CreateEvent() {
         setCircles(c.circles)
       })
       .catch(toastError)
-  }, [user?.id])
+  }, [user?.id, locale])
 
   // AI 草稿里的邀请策略：好友加载后预选（仍需用户确认）
   useEffect(() => {
@@ -129,7 +131,8 @@ export default function CreateEvent() {
     const { strategy, circleNames } = pendingStrategy
     if (strategy === 'favorites') setInviteIds(friends.filter((f) => f.favorite).map((f) => f.user.id))
     if (strategy === 'friends') setInviteIds(friends.map((f) => f.user.id))
-    if (strategy === 'circles') setCircleIds(circles.filter((c) => circleNames.some((n) => c.name.includes(n) || n.includes(c.name))).map((c) => c.id))
+    if (strategy === 'circles')
+      setCircleIds(circles.filter((c) => circleNames.some((n) => c.name.includes(n) || n.includes(c.name))).map((c) => c.id))
     setPendingStrategy(null)
   }, [pendingStrategy, friends, circles])
 
@@ -142,7 +145,7 @@ export default function CreateEvent() {
   const toggleGame = (c: OptionDraft) => {
     const i = selectedIndex(c)
     if (i >= 0) setOptions(options.filter((_, j) => j !== i))
-    else if (options.length >= 6) toast('最多 6 种玩法')
+    else if (options.length >= 6) toast(t('最多 6 种玩法'))
     else setOptions([...options, { ...c }])
   }
   const patchOption = (id: string, p: Partial<OptionDraft>) =>
@@ -174,7 +177,7 @@ export default function CreateEvent() {
   const favorites = friends.filter((f) => f.favorite)
   const needsGmAny = options.some((o) => o.needsGm)
   const toggleId = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
-  const flag = (f: DraftField) => uncertain.includes(f) && <Text className='hint-ai'>帮忙看看</Text>
+  const flag = (f: DraftField) => uncertain.includes(f) && <Text className='hint-ai'>{t('帮忙看看')}</Text>
 
   const submit = async () => {
     if (!(await requireUser('先让朋友知道你是谁'))) return
@@ -200,7 +203,7 @@ export default function CreateEvent() {
       hostRoles: hostJoins && hostGm ? ['gm'] : [],
     }
     const check = createEventSchema.safeParse(payload)
-    if (!check.success) return toast(check.error.issues[0]?.message ?? '还有没填好的')
+    if (!check.success) return toast(check.error.issues[0]?.message ? t(check.error.issues[0].message) : t('还有没填好的'))
     setSubmitting(true)
     try {
       const { code } = await post<{ code: string }>('/api/events', payload)
@@ -216,31 +219,32 @@ export default function CreateEvent() {
     <Page
       footer={
         <Button kind='primary' block size='lg' loading={submitting} disabled={options.length === 0 || slots.length === 0} onClick={submit}>
-          {notifyCount > 0 ? `开局，叫上 ${notifyCount} 人` : '开局，拿链接'}
+          {notifyCount > 0 ? t('开局，叫上 {0} 人', notifyCount) : t('开局，拿链接')}
         </Button>
       }
     >
       <View className='row row--between'>
-        <View className='h1'>我来组一局</View>
+        <View className='h1'>{t('我来组一局')}</View>
         <Icon name='x' onClick={() => back()} />
       </View>
       {fromAi && (
         <View className='sub mt8'>
-          ✨ 照你说的填好了{uncertain.length > 0 ? `，这几项帮忙看看：${uncertain.map((f) => DRAFT_FIELD_LABELS[f]).join('、')}` : ''}
+          {t(
+            '✨ 照你说的填好了{0}',
+            uncertain.length > 0 ? t('，这几项帮忙看看：{0}', uncertain.map((f) => t(DRAFT_FIELD_LABELS[f])).join('、')) : '',
+          )}
         </View>
       )}
       {interest && (
-        <View className='sub mt8'>
-          {interest.emoji} {interest.name} 人齐了，+1 的人会自动收到邀请
-        </View>
+        <View className='sub mt8'>{t('{0} {1}人齐了，+1 的人会自动收到邀请', interest.emoji, localizeBuiltinGame(interest).name)}</View>
       )}
 
       <SectionTitle
-        title='玩什么'
+        title={t('玩什么')}
         extra={
           options.length > 0 ? (
             <Text className='link small' onClick={() => setCountsOpen(true)}>
-              调整人数
+              {t('调整人数')}
             </Text>
           ) : undefined
         }
@@ -252,7 +256,7 @@ export default function CreateEvent() {
           const sel = i >= 0 ? options[i]! : null
           return (
             <Chip key={c.id} on={!!sel} onClick={() => toggleGame(c)}>
-              {c.emoji} {c.name}
+              {c.emoji} {localizeBuiltinGame(c).name}
               {sel ? <Text className='chip__meta'>{playersText(sel)}</Text> : null}
             </Chip>
           )
@@ -262,13 +266,13 @@ export default function CreateEvent() {
         </View>
       </View>
 
-      <SectionTitle title='什么时候' />
+      <SectionTitle title={t('什么时候')} />
       {flag('when')}
       <SlotEditor tz={tz} durationMin={durationMin} value={slots} onChange={setSlots} compareZones={compareZones} />
 
       {friends.length > 0 && (
         <>
-          <SectionTitle title='叫谁' />
+          <SectionTitle title={t('叫谁')} />
           {flag('invite')}
           <View className='row wrap gap8'>
             {favorites.length > 0 && (
@@ -277,10 +281,14 @@ export default function CreateEvent() {
                 on={favorites.every((f) => inviteIds.includes(f.user.id))}
                 onClick={() => {
                   const all = favorites.every((f) => inviteIds.includes(f.user.id))
-                  setInviteIds(all ? inviteIds.filter((id) => !favorites.some((f) => f.user.id === id)) : [...new Set([...inviteIds, ...favorites.map((f) => f.user.id)])])
+                  setInviteIds(
+                    all
+                      ? inviteIds.filter((id) => !favorites.some((f) => f.user.id === id))
+                      : [...new Set([...inviteIds, ...favorites.map((f) => f.user.id)])],
+                  )
                 }}
               >
-                ⭐ 常玩的
+                {t('⭐ 常玩的')}
               </Chip>
             )}
             {circles.map((c) => (
@@ -295,7 +303,7 @@ export default function CreateEvent() {
             ))}
           </View>
           <View className='switch-row mt8'>
-            <Text className='sub'>只让选中的人看到</Text>
+            <Text className='sub'>{t('只让选中的人看到')}</Text>
             <Switch color='#FF2B2B' checked={inviteOnly} onChange={(e) => setInviteOnly(e.detail.value)} />
           </View>
         </>
@@ -303,61 +311,81 @@ export default function CreateEvent() {
 
       <View className='center mt24'>
         <Text className='link' onClick={() => setMoreOpen(true)}>
-          更多设置
+          {t('更多设置')}
         </Text>
       </View>
 
       {/* 本局人数 */}
-      <Sheet open={countsOpen} onClose={() => setCountsOpen(false)} title='这局几个人'>
+      <Sheet open={countsOpen} onClose={() => setCountsOpen(false)} title={t('这局几个人')}>
         {options.map((o) => (
           <View key={o.id} className='mt12'>
             <View className='bold'>
-              {o.emoji} {o.name}
+              {o.emoji} {localizeBuiltinGame(o).name}
             </View>
             <View className='switch-row'>
-              <Text className='sub'>最少</Text>
+              <Text className='sub'>{t('最少')}</Text>
               <Stepper value={o.minPlayers} min={1} max={50} onChange={(v) => patchOption(o.id, { minPlayers: v })} />
             </View>
             <View className='switch-row'>
-              <Text className='sub'>最多</Text>
+              <Text className='sub'>{t('最多')}</Text>
               <Stepper value={o.maxPlayers} min={1} max={50} onChange={(v) => patchOption(o.id, { maxPlayers: v })} />
             </View>
             <View className='switch-row'>
-              <Text className='sub'>需要 KP/GM</Text>
+              <Text className='sub'>{t('需要 KP/GM')}</Text>
               <Switch color='#FF2B2B' checked={o.needsGm} onChange={(e) => patchOption(o.id, { needsGm: e.detail.value })} />
             </View>
           </View>
         ))}
         <Button kind='primary' block className='mt16' onClick={() => setCountsOpen(false)}>
-          好了
+          {t('好了')}
         </Button>
       </Sheet>
 
       {/* 更多设置 */}
-      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title='更多设置'>
-        <Input className='input mt12' placeholder={options.length ? `标题（默认：${options.map((o) => o.name).join(' / ')}）` : '标题'} maxlength={40} value={title} onInput={(e) => setTitle(e.detail.value)} />
-        <Textarea className='textarea mt8' placeholder='备注，比如：雀魂友人场' maxlength={300} value={note} onInput={(e) => setNote(e.detail.value)} />
+      <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title={t('更多设置')}>
+        <Input
+          className='input mt12'
+          placeholder={options.length ? t('标题（默认：{0}）', options.map((o) => localizeBuiltinGame(o).name).join(' / ')) : t('标题')}
+          maxlength={40}
+          value={title}
+          onInput={(e) => setTitle(e.detail.value)}
+        />
+        <Textarea
+          className='textarea mt8'
+          placeholder={t('备注，比如：雀魂友人场')}
+          maxlength={300}
+          value={note}
+          onInput={(e) => setNote(e.detail.value)}
+        />
         <View className='switch-row mt8'>
-          <Text>线下见面</Text>
+          <Text>{t('线下见面')}</Text>
           <Switch color='#FF2B2B' checked={offline} onChange={(e) => setOffline(e.detail.value)} />
         </View>
-        {offline && <Input className='input' placeholder='地点（可以之后再定）' maxlength={80} value={location} onInput={(e) => setLocation(e.detail.value)} />}
+        {offline && (
+          <Input
+            className='input'
+            placeholder={t('地点（可以之后再定）')}
+            maxlength={80}
+            value={location}
+            onInput={(e) => setLocation(e.detail.value)}
+          />
+        )}
         <View className='switch-row'>
-          <Text>我也参加</Text>
+          <Text>{t('我也参加')}</Text>
           <Switch color='#FF2B2B' checked={hostJoins} onChange={(e) => setHostJoins(e.detail.value)} />
         </View>
         {hostJoins && needsGmAny && (
           <View className='switch-row'>
-            <Text>我来当 KP/GM</Text>
+            <Text>{t('我来当 KP/GM')}</Text>
             <Switch color='#FF2B2B' checked={hostGm} onChange={(e) => setHostGm(e.detail.value)} />
           </View>
         )}
         <View className='switch-row'>
-          <Text>人满了可以排候补</Text>
+          <Text>{t('人满了可以排候补')}</Text>
           <Switch color='#FF2B2B' checked={allowWaitlist} onChange={(e) => setAllowWaitlist(e.detail.value)} />
         </View>
         <Button kind='primary' block className='mt16' onClick={() => setMoreOpen(false)}>
-          好了
+          {t('好了')}
         </Button>
       </Sheet>
 

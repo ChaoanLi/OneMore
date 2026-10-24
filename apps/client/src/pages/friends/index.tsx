@@ -1,5 +1,6 @@
+import { t, useLocale, getLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Input, Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro from '@tarojs/taro'
 import { useState } from 'react'
 import { zoneLabel, type CirclesResponse, type FriendsResponse } from '@couju/core'
 import { FAINT, Icon, RED } from '../../components/Icon'
@@ -12,6 +13,7 @@ import { appUrl, confirm, copyText, go, toast, toastError } from '../../lib/ui'
 
 /** 好友与圈子。常玩标记和圈子都只有自己看得到。 */
 export default function Friends() {
+  useLocale()
   const { user } = useSession()
   const [data, setData] = useState<FriendsResponse | null>(null)
   const [circles, setCircles] = useState<CirclesResponse['circles']>([])
@@ -29,7 +31,7 @@ export default function Friends() {
       toastError(e)
     }
   }
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     void load()
   })
 
@@ -39,7 +41,7 @@ export default function Friends() {
     setBusy(true)
     try {
       const r = await post<{ status: string; user: { nickname: string } }>('/api/friends', { handle: h })
-      toast(r.status === 'accepted' ? `你和 ${r.user.nickname} 已是好友` : `已向 ${r.user.nickname} 发送请求`)
+      toast(r.status === 'accepted' ? t('你和 {0} 已是好友', r.user.nickname) : t('已向 {0} 发送请求', r.user.nickname))
       setHandle('')
       void load()
     } catch (e) {
@@ -52,11 +54,11 @@ export default function Friends() {
   if (!user) {
     return (
       <Page nav='friends'>
-        <View className='h1 mt8'>朋友</View>
+        <View className='h1 mt8'>{t('朋友')}</View>
         <Card className='mt16'>
-          <Empty icon='👥' text='先让朋友知道你是谁，才能加朋友、分圈子'>
+          <Empty icon='👥' text={t('先让朋友知道你是谁，才能加朋友、分圈子')}>
             <Button kind='primary' className='mt12' onClick={() => void requireUser().then(() => load())}>
-              好的
+              {t('好的')}
             </Button>
           </Empty>
         </Card>
@@ -76,30 +78,43 @@ export default function Friends() {
 
   return (
     <Page nav='friends'>
-      <View className='h1 mt8'>朋友</View>
+      <View className='h1 mt8'>{t('朋友')}</View>
 
       <Card className='mt16'>
         <View className='row gap12'>
           <Avatar user={user} size='lg' />
           <View className='flex1'>
             <View className='h3'>{user.nickname}</View>
-            <View className='sub'>我的 ID：{user.handle}</View>
+            <View className='sub'>{t('我的 ID：{0}', user.handle)}</View>
           </View>
         </View>
-        <Button kind='primary' block className='mt12' onClick={() => void copyText(`在「${APP_NAME}」加我好友：${appUrl(`/pages/friends/add?h=${user.handle}`)}`, '复制好了，发给朋友吧')}>
-          复制我的加好友链接
+        <Button
+          kind='primary'
+          block
+          className='mt12'
+          onClick={() =>
+            void copyText(t('在「{0}」加我好友：{1}', APP_NAME, appUrl(`/pages/friends/add?h=${user.handle}`)), t('复制好了，发给朋友吧'))
+          }
+        >
+          {t('复制我的加好友链接')}
         </Button>
         <View className='row gap8 mt12'>
-          <Input className='input flex1' placeholder='输入朋友的 ID' value={handle} onInput={(e) => setHandle(e.detail.value)} onConfirm={add} />
+          <Input
+            className='input flex1'
+            placeholder={t('输入朋友的 ID')}
+            value={handle}
+            onInput={(e) => setHandle(e.detail.value)}
+            onConfirm={add}
+          />
           <Button loading={busy} onClick={add}>
-            加好友
+            {t('加好友')}
           </Button>
         </View>
       </Card>
 
       {data && data.incoming.length > 0 && (
         <>
-          <SectionTitle title={`有人想加你（${data.incoming.length}）`} />
+          <SectionTitle title={t('有人想加你（{0}）', data.incoming.length)} />
           <Card>
             {data.incoming.map((u) => (
               <View key={u.id} className='list-item'>
@@ -120,7 +135,7 @@ export default function Friends() {
                     }
                   }}
                 >
-                  加上
+                  {t('加上')}
                 </Button>
                 <Button
                   size='sm'
@@ -130,7 +145,7 @@ export default function Friends() {
                     void load()
                   }}
                 >
-                  先不了
+                  {t('先不了')}
                 </Button>
               </View>
             ))}
@@ -138,25 +153,30 @@ export default function Friends() {
         </>
       )}
 
-      <SectionTitle title={`朋友（${data?.friends.length ?? 0}）`} extra={<Text className='sub small'>星标 = 常一起玩，只有你看得到</Text>} />
+      <SectionTitle
+        title={t('朋友（{0}）', data?.friends.length ?? 0)}
+        extra={<Text className='sub small'>{t('星标 = 常一起玩，只有你看得到')}</Text>}
+      />
       <Card>
-        {data && data.friends.length === 0 && <Empty icon='🤝' text='还没有朋友在这儿。把加好友链接丢给他们，或者在局里加一起玩的人。' />}
+        {data && data.friends.length === 0 && (
+          <Empty icon='🤝' text={t('还没有朋友在这儿。把加好友链接丢给他们，或者在局里加一起玩的人。')} />
+        )}
         {data?.friends.map((f) => (
           <View key={f.user.id} className='list-item'>
             <Avatar user={f.user} />
             <View className='flex1'>
               <View className='bold'>{f.user.nickname}</View>
               <View className='muted'>
-                {f.user.handle} · {zoneLabel(f.user.timezone)}
+                {f.user.handle} · {zoneLabel(f.user.timezone, getLocale())}
               </View>
             </View>
             <Icon name='star' filled={f.favorite} color={f.favorite ? RED : FAINT} onClick={() => toggleFavorite(f.user.id, !f.favorite)} />
             <View
               className='ml8'
               onClick={async () => {
-                const r = await Taro.showActionSheet({ itemList: ['删除好友'] }).catch(() => null)
+                const r = await Taro.showActionSheet({ itemList: [t('删除好友')] }).catch(() => null)
                 if (r?.tapIndex !== 0) return
-                if (!(await confirm(`删除 ${f.user.nickname}？`, '对方不会收到通知，也会从你的圈子里移除。', '删除'))) return
+                if (!(await confirm(t('删除 {0}？', f.user.nickname), t('对方不会收到通知，也会从你的圈子里移除。'), t('删除')))) return
                 await del(`/api/friends/${f.user.id}`).catch(toastError)
                 void load()
               }}
@@ -166,32 +186,36 @@ export default function Friends() {
           </View>
         ))}
         {data && data.outgoing.length > 0 && (
-          <View className='muted mt8'>等对方点头：{data.outgoing.map((u) => u.nickname).join('、')}</View>
+          <View className='muted mt8'>{t('等对方点头：{0}', data.outgoing.map((u) => u.nickname).join('、'))}</View>
         )}
       </Card>
 
       <SectionTitle
-        title='圈子'
+        title={t('圈子')}
         extra={
           <Text className='link small' onClick={() => go('/pages/circle/edit')}>
-            ＋ 新建
+            {t('＋ 新建')}
           </Text>
         }
       />
       <Card>
-        {circles.length === 0 && <Empty icon='🫂' text='给常一起玩的人分个组，比如“麻将搭子”“刀塔五黑”，组局时一键叫上。' />}
+        {circles.length === 0 && <Empty icon='🫂' text={t('给常一起玩的人分个组，比如“麻将搭子”“刀塔五黑”，组局时一键叫上。')} />}
         {circles.map((c) => (
           <View key={c.id} className='list-item' onClick={() => go(`/pages/circle/edit?id=${c.id}`)}>
             <Icon name='users' />
             <View className='flex1'>
               <View className='bold'>{c.name}</View>
               <View className='muted'>
-                {c.memberIds.length} 人 ·{' '}
-                {c.memberIds
-                  .map((id) => data?.friends.find((f) => f.user.id === id)?.user.nickname)
-                  .filter(Boolean)
-                  .slice(0, 4)
-                  .join('、')}
+                {t(
+                  '{0} 人 ·{1}{2}',
+                  c.memberIds.length,
+                  ' ',
+                  c.memberIds
+                    .map((id) => data?.friends.find((f) => f.user.id === id)?.user.nickname)
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .join('、'),
+                )}
               </View>
             </View>
             <Text className='muted'>›</Text>

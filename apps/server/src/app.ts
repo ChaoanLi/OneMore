@@ -1,10 +1,10 @@
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { ZodError } from 'zod'
-import { aiDraftRequestSchema, GAME_CATALOG, type User } from '@couju/core'
+import { aiDraftRequestSchema, GAME_CATALOG, normalizeLocale, translate, renderMessage, localizeBuiltinGame, type User } from '@couju/core'
 import type { Ctx } from './services/context'
 import type { Store } from './store'
-import { AppError, MemoryRateLimiter, hashToken } from './util'
+import { AppError, MemoryRateLimiter, hashToken, validationMessage } from './util'
 import * as users from './services/users'
 import * as spaces from './services/spaces'
 import * as social from './services/social'
@@ -46,7 +46,8 @@ export function createApp(deps: AppDeps) {
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined
     const user = users.userFromToken(ctx, token)
     c.set('user', user)
-    c.set('ctx', ctx)
+    const requestCtx: Ctx = { ...ctx, locale: normalizeLocale(c.req.header('Accept-Language')) }
+    c.set('ctx', requestCtx)
     c.set('membershipGeneration', undefined)
     const path = c.req.path
     const global =
@@ -65,7 +66,7 @@ export function createApp(deps: AppDeps) {
       if (!spaceId) throw new AppError(400, 'space_required', '请先选择空间')
       const membership = spaces.requireMember(ctx, user, spaceId)
       c.set('membershipGeneration', membership.generation)
-      c.set('ctx', { ...ctx, store: deps.store.forSpace(spaceId) })
+      c.set('ctx', { ...requestCtx, store: deps.store.forSpace(spaceId) })
     }
     await next()
   })
@@ -95,17 +96,18 @@ export function createApp(deps: AppDeps) {
   const ip = (c: Context<Env>) => c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
 
   app.onError((err, c) => {
-    if (err instanceof AppError) return c.json({ error: err.code, message: err.message }, err.status)
+    const locale = c.get('ctx')?.locale ?? normalizeLocale(c.req.header('Accept-Language'))
+    if (err instanceof AppError) return c.json({ error: err.code, message: typeof err.displayMessage === 'string' ? translate(locale, err.displayMessage) : renderMessage(locale, err.displayMessage) }, err.status)
     if (err instanceof ZodError) {
       const issue = err.issues[0]
-      return c.json({ error: 'invalid_input', message: issue?.message ?? '输入有误', path: issue?.path }, 400)
+      return c.json({ error: 'invalid_input', message: validationMessage(issue, locale), path: issue?.path }, 400)
     }
     console.error(err)
-    return c.json({ error: 'internal', message: '服务器开小差了，请稍后再试' }, 500)
+    return c.json({ error: 'internal', message: translate(locale, '服务器开小差了，请稍后再试') }, 500)
   })
 
   app.get('/api/health', (c) => c.json({ ok: true, ai: ai.name, time: scoped(c).now().toISOString() }))
-  app.get('/api/games', (c) => c.json({ games: GAME_CATALOG }))
+  app.get('/api/games', (c) => c.json({ games: GAME_CATALOG.map(g => localizeBuiltinGame(g, scoped(c).locale)) }))
 
   // ---------- 身份 ----------
   app.post('/api/auth/guest', async (c) => {
@@ -126,20 +128,20 @@ export function createApp(deps: AppDeps) {
 
   // ---------- 空间 ----------
   app.get('/api/spaces', (c) => c.json({ spaces: ctx.store.listSpaces(me(c).id) }))
-  app.post('/api/spaces', async (c) => c.json(spaces.createSpace(ctx, me(c), await body(c))))
-  app.get('/api/spaces/:id/members', (c) => c.json(spaces.memberList(ctx, me(c), c.req.param('id'))))
-  app.post('/api/spaces/:id/invite', (c) => c.json(spaces.rotateInvite(ctx, me(c), c.req.param('id'))))
-  app.get('/api/space-invites/:token', (c) => c.json(spaces.invitePreview(ctx, c.req.param('token'), c.get('user'))))
-  app.post('/api/space-invites/:token/requests', (c) => c.json(spaces.requestJoin(ctx, me(c), c.req.param('token'))))
-  app.get('/api/spaces/:id/requests', (c) => c.json(spaces.requests(ctx, me(c), c.req.param('id'))))
+  app.post('/api/spaces', async (c) => c.json(spaces.createSpace(scoped(c), me(c), await body(c))))
+  app.get('/api/spaces/:id/members', (c) => c.json(spaces.memberList(scoped(c), me(c), c.req.param('id'))))
+  app.post('/api/spaces/:id/invite', (c) => c.json(spaces.rotateInvite(scoped(c), me(c), c.req.param('id'))))
+  app.get('/api/space-invites/:token', (c) => c.json(spaces.invitePreview(scoped(c), c.req.param('token'), c.get('user'))))
+  app.post('/api/space-invites/:token/requests', (c) => c.json(spaces.requestJoin(scoped(c), me(c), c.req.param('token'))))
+  app.get('/api/spaces/:id/requests', (c) => c.json(spaces.requests(scoped(c), me(c), c.req.param('id'))))
   app.post('/api/spaces/:id/requests/:request/approve', (c) =>
-    c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), true)),
+    c.json(spaces.decideRequest(scoped(c), me(c), c.req.param('id'), c.req.param('request'), true)),
   )
   app.post('/api/spaces/:id/requests/:request/reject', (c) =>
-    c.json(spaces.decideRequest(ctx, me(c), c.req.param('id'), c.req.param('request'), false)),
+    c.json(spaces.decideRequest(scoped(c), me(c), c.req.param('id'), c.req.param('request'), false)),
   )
-  app.post('/api/spaces/:id/leave', (c) => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), me(c).id)))
-  app.delete('/api/spaces/:id/members/:user', (c) => c.json(spaces.removeMember(ctx, me(c), c.req.param('id'), c.req.param('user'))))
+  app.post('/api/spaces/:id/leave', (c) => c.json(spaces.removeMember(scoped(c), me(c), c.req.param('id'), me(c).id)))
+  app.delete('/api/spaces/:id/members/:user', (c) => c.json(spaces.removeMember(scoped(c), me(c), c.req.param('id'), c.req.param('user'))))
 
   // ---------- 好友与圈子 ----------
   app.get('/api/friends', (c) => c.json(social.listFriends(scoped(c), me(c))))
@@ -239,11 +241,12 @@ export function createApp(deps: AppDeps) {
   app.get('/api/email/unsubscribe/:token', (c) => {
     try {
       const addr = email.unsubscribe(scoped(c), c.req.param('token'))
+      const locale = scoped(c).locale ?? 'zh-CN'
       return c.html(
-        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:420px;margin:60px auto;padding:0 20px;color:#1f1f1f"><div style="color:#ff2b2b;font-weight:800">算我一个 · OneMore</div><h2>已退订</h2><p style="color:#6b6b6b">${addr.replace(/[<>&"]/g, '')} 之后不会再收到任何邮件。想重新接收，在 App 的“我”里重新验证邮箱即可。</p></body>`,
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:420px;margin:60px auto;padding:0 20px;color:#1f1f1f"><div style="color:#ff2b2b;font-weight:800">${locale === 'en' ? 'OneMore' : APP_NAME}</div><h2>${translate(locale, '已退订')}</h2><p style="color:#6b6b6b">${translate(locale, '{0} 之后不会再收到任何邮件。想重新接收，在 App 的“我”里重新验证邮箱即可。', addr.replace(/[<>&"]/g, ''))}</p></body>`,
       )
     } catch {
-      return c.html('<!doctype html><meta charset="utf-8"><p>退订链接无效。</p>', 404)
+      return c.html(`<!doctype html><meta charset="utf-8"><p>${translate(scoped(c).locale, '退订链接无效。')}</p>`, 404)
     }
   })
 
@@ -281,7 +284,7 @@ export function createApp(deps: AppDeps) {
     const user = me(c)
     if (!aiLimiter.check(user.id)) throw new AppError(429, 'rate_limited', '说得太快啦，歇一会儿再试')
     const { text } = aiDraftRequestSchema.parse(await body(c))
-    return c.json(await draftFromText(ai, text, { now: scoped(c).now(), timezone: user.timezone }))
+    return c.json(await draftFromText(ai, text, { now: scoped(c).now(), timezone: user.timezone, locale: scoped(c).locale }))
   })
 
   return { app, ctx }

@@ -1,3 +1,4 @@
+import { message } from '@couju/core'
 import { z } from 'zod'
 import { deriveStatus, type Space, type SpaceJoinRequest, type User } from '@couju/core'
 import type { Ctx } from './context'
@@ -99,14 +100,14 @@ export function removeMember(ctx: Ctx, user: User, id: string, target: string) {
       const status = deriveStatus(e, ctx.now())
       if (status !== 'open' && status !== 'confirmed') continue
       if (e.hostId === target) {
-        scoped.store.saveEvent({ ...e, status: 'cancelled', cancelReason: '组局人已退出空间', updatedAt: at })
+        scoped.store.saveEvent({ ...e, status: 'cancelled', cancelReason: '组局人已退出空间', cancelReasonMessage: message('组局人已退出空间'), updatedAt: at })
         const recipients = new Set([...e.invitations.map((i) => i.userId), ...scoped.store.listResponses(e.id).map((r) => r.userId)])
         for (const uid of recipients)
           if (uid !== target)
             notify(scoped, uid, {
               kind: 'event_cancelled',
-              title: `${e.title} 已取消`,
-              body: '组局人已退出空间',
+              title: message("{0} 已取消", e.title),
+              body: message("组局人已退出空间"),
               link: `/pages/event/detail?code=${e.code}`,
               dedupeKey: `member-left:${e.id}:${target}`,
             })
@@ -131,8 +132,8 @@ export function removeMember(ctx: Ctx, user: User, id: string, target: string) {
         scoped.store.saveEvent({ ...e, invitations: e.invitations.filter((i) => i.userId !== target), final, updatedAt: at })
         notify(scoped, e.hostId, {
           kind: 'event_short',
-          title: `${e.title} 有成员退出`,
-          body: '该成员已退出空间，未来活动报名和席位已撤回，请检查人数。',
+          title: message("{0} 有成员退出", e.title),
+          body: message("该成员已退出空间，未来活动报名和席位已撤回，请检查人数。"),
           link: `/pages/event/detail?code=${e.code}`,
           dedupeKey: `member-left:${e.id}:${target}`,
         })
@@ -148,8 +149,8 @@ export function removeMember(ctx: Ctx, user: User, id: string, target: string) {
             notify(scoped, uid, {
               kind: 'interest_changed',
               objectId: i.id,
-              title: `${i.name} 参与情况有变化`,
-              body: i.ownerId === target ? '发起人已退出空间，这条想玩已撤回。' : '有成员退出空间，想玩人数已更新。',
+              title: message("{0} 参与情况有变化", message('$game', i.gameKey, i.name)),
+              body: i.ownerId === target ? message("发起人已退出空间，这条想玩已撤回。") : message("有成员退出空间，想玩人数已更新。"),
               link: '/pages/index/index',
               dedupeKey: `interest-member-left:${i.id}:${target}`,
             })

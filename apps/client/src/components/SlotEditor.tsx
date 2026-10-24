@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from '../lib/i18n'
 import { Picker, Text, View } from '@tarojs/components'
 import { useState } from 'react'
 import {
@@ -57,6 +58,7 @@ export function SlotEditor(props: {
   onChange: (v: SlotInput[]) => void
   compareZones?: string[]
 }) {
+  useLocale()
   const { tz, value, onChange } = props
   const today = utcToLocal(new Date().toISOString(), tz).slice(0, 10)
   const [month, setMonth] = useState(today.slice(0, 7))
@@ -80,9 +82,9 @@ export function SlotEditor(props: {
 
   const addMany = (slots: SlotInput[]) => {
     const fresh = slots.filter((x) => !value.some((s) => s.startUtc === x.startUtc))
-    if (fresh.length === 0) return toast('已经选过了')
+    if (fresh.length === 0) return toast(t('已经选过了'))
     const room = MAX_SLOTS - value.length
-    if (room <= 0) return toast(`最多 ${MAX_SLOTS} 个时间`)
+    if (room <= 0) return toast(t('最多 {0} 个时间', MAX_SLOTS))
     onChange([...value, ...fresh.slice(0, room)])
   }
 
@@ -93,7 +95,7 @@ export function SlotEditor(props: {
       return
     }
     const slot = make(date, time)
-    if (Date.parse(slot.startUtc) <= Date.now()) return toast(`今天 ${time} 已经过了，换个时间`)
+    if (Date.parse(slot.startUtc) <= Date.now()) return toast(t('今天 {0} 已经过了，换个时间', time))
     addMany([slot])
   }
 
@@ -101,8 +103,8 @@ export function SlotEditor(props: {
   const retime = (s: SlotInput, hhmm: string) => {
     const date = localDate(s)
     const startUtc = localToUtc(`${date}T${hhmm}`, tz)
-    if (Date.parse(startUtc) <= Date.now()) return toast('这个时间已经过了')
-    if (value.some((x) => x !== s && x.startUtc === startUtc)) return toast('已经有这个时间了')
+    if (Date.parse(startUtc) <= Date.now()) return toast(t('这个时间已经过了'))
+    if (value.some((x) => x !== s && x.startUtc === startUtc)) return toast(t('已经有这个时间了'))
     const dur = s.endUtc ? Date.parse(s.endUtc) - Date.parse(s.startUtc) : 0
     onChange(value.map((x) => (x === s ? { startUtc, endUtc: dur > 0 ? new Date(Date.parse(startUtc) + dur).toISOString() : null } : x)))
   }
@@ -121,20 +123,24 @@ export function SlotEditor(props: {
     <View>
       <View className='pick-cal'>
         <View className='row row--between cal__bar'>
-          <View className={cx('cal__nav', month <= today.slice(0, 7) && 'cal__nav--off')} onClick={() => month > today.slice(0, 7) && setMonth(shiftMonth(month, -1))}>
+          <View
+            className={cx('cal__nav', month <= today.slice(0, 7) && 'cal__nav--off')}
+            onClick={() => month > today.slice(0, 7) && setMonth(shiftMonth(month, -1))}
+          >
             <Icon name='left' />
           </View>
-          <Text className='h3'>
-            {month.slice(0, 4)} 年 {Number(month.slice(5))} 月
-          </Text>
-          <View className={cx('cal__nav', month >= maxMonth && 'cal__nav--off')} onClick={() => month < maxMonth && setMonth(shiftMonth(month, 1))}>
+          <Text className='h3'>{t('{0} 年 {1}月', month.slice(0, 4), Number(month.slice(5)))}</Text>
+          <View
+            className={cx('cal__nav', month >= maxMonth && 'cal__nav--off')}
+            onClick={() => month < maxMonth && setMonth(shiftMonth(month, 1))}
+          >
             <Icon name='right' />
           </View>
         </View>
         <View className='scal__row'>
           {WEEK.map((w) => (
             <View key={w} className='scal__head'>
-              {w}
+              {t(w)}
             </View>
           ))}
         </View>
@@ -145,10 +151,16 @@ export function SlotEditor(props: {
             const n = countByDate.get(d) ?? 0
             return (
               <View key={d} className='scal__cell' onClick={() => !past && tapDay(d)}>
-                <View className={cx('scal__day', past ? 'scal__day--empty' : n > 0 ? 'scal__day--picked' : 'scal__day--free', d === today && 'scal__day--today')}>
+                <View
+                  className={cx(
+                    'scal__day',
+                    past ? 'scal__day--empty' : n > 0 ? 'scal__day--picked' : 'scal__day--free',
+                    d === today && 'scal__day--today',
+                  )}
+                >
                   {Number(d.slice(8))}
                 </View>
-                <Text className='scal__label'>{n > 1 ? `${n}场` : ''}</Text>
+                <Text className='scal__label'>{n > 1 ? t('{0}场', n) : ''}</Text>
               </View>
             )
           })}
@@ -157,26 +169,26 @@ export function SlotEditor(props: {
 
       {/* 新加的时间用这个 */}
       <View className='row wrap gap8 mt12'>
-        {TIMES.map((t) => (
-          <Chip key={t.value} small on={time === t.value} onClick={() => setTime(t.value)}>
-            {t.label}
+        {TIMES.map((timing) => (
+          <Chip key={timing.value} small on={time === timing.value} onClick={() => setTime(timing.value)}>
+            {t(timing.label)}
           </Chip>
         ))}
         <Picker mode='time' value={time} onChange={(e) => setTime(String(e.detail.value))}>
           <View className={cx('chip chip--sm', !TIMES.some((t) => t.value === time) && 'chip--on')}>
             <Icon name='clock' size='sm' />
-            <Text className='ml4'>{TIMES.some((t) => t.value === time) ? '其他' : time}</Text>
+            <Text className='ml4'>{TIMES.some((t) => t.value === time) ? t('其他') : time}</Text>
           </View>
         </Picker>
         <View className='chip chip--sm chip--dashed' onClick={() => setWeeklyOpen(true)}>
-          每周重复
+          {t('每周重复')}
         </View>
       </View>
 
       {sorted.length > 0 && (
         <View className='mt12'>
           {sorted.map((s) => {
-            const d = formatSlot(s, tz)
+            const d = formatSlot(s, tz, undefined, getLocale())
             const hhmm = utcToLocal(s.startUtc, tz).slice(11, 16)
             return (
               <View key={s.startUtc} className='slot row'>
@@ -187,7 +199,7 @@ export function SlotEditor(props: {
                       <Text className='time-pill'>{d.timeLabel}</Text>
                     </Picker>
                   </View>
-                  {zone && <View className='muted'>{slotInOtherZone(s, tz, zone)}</View>}
+                  {zone && <View className='muted'>{slotInOtherZone(s, tz, zone, getLocale())}</View>}
                 </View>
                 <Icon name='x' size='sm' color={FAINT} onClick={() => onChange(value.filter((x) => x !== s))} />
               </View>
@@ -196,14 +208,14 @@ export function SlotEditor(props: {
           {sorted.length > 3 && (
             <View className='right-link'>
               <Text className='link small' onClick={() => onChange([])}>
-                清空
+                {t('清空')}
               </Text>
             </View>
           )}
         </View>
       )}
 
-      <Sheet open={weeklyOpen} onClose={() => setWeeklyOpen(false)} title='每周重复'>
+      <Sheet open={weeklyOpen} onClose={() => setWeeklyOpen(false)} title={t('每周重复')}>
         <View className='row wrap gap8 mt12'>
           {RECURRING_PRESETS.map((p) => (
             <Chip
@@ -214,7 +226,7 @@ export function SlotEditor(props: {
                 setWeeklyOpen(false)
               }}
             >
-              {p.label}
+              {t(p.label)}
             </Chip>
           ))}
         </View>
@@ -222,7 +234,7 @@ export function SlotEditor(props: {
         <View className='row wrap gap8'>
           {[2, 4, 8].map((w) => (
             <Chip key={w} small on={weeks === w} onClick={() => setWeeks(w)}>
-              {w === 4 ? '一个月' : w === 8 ? '两个月' : '两周'}
+              {w === 4 ? t('一个月') : w === 8 ? t('两个月') : t('两周')}
             </Chip>
           ))}
         </View>
@@ -232,20 +244,20 @@ export function SlotEditor(props: {
             const on = weekdays.includes(wd)
             return (
               <Chip key={name} small on={on} onClick={() => setWeekdays(on ? weekdays.filter((x) => x !== wd) : [...weekdays, wd].sort())}>
-                {name.replace('周', '')}
+                {getLocale() === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i] : name.replace('周', '')}
               </Chip>
             )
           })}
         </View>
         <View className='row wrap gap8 mt8'>
           <Picker mode='time' value={time} onChange={(e) => setTime(String(e.detail.value))}>
-            <View className='picker-box'>每次 {time}</View>
+            <View className='picker-box'>{t('每次 {0}', time)}</View>
           </Picker>
         </View>
         <View className='row wrap gap8 mt8'>
           {DURATIONS.map((d) => (
             <Chip key={d.min} small on={duration === d.min} onClick={() => setDuration(d.min)}>
-              {d.label}
+              {t(d.label)}
             </Chip>
           ))}
         </View>
@@ -259,7 +271,7 @@ export function SlotEditor(props: {
             setWeeklyOpen(false)
           }}
         >
-          加上 {weekly.length} 个
+          {t('加上{0}个', weekly.length)}
         </Button>
       </Sheet>
     </View>

@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n'
 import type { EventStatus, GameEvent } from './types'
 
 /**
@@ -57,18 +58,19 @@ const STATUS_TEXT: Record<EventStatus, string> = {
   completed: '玩完了',
 }
 
-export function statusText(status: EventStatus): string {
-  return STATUS_TEXT[status]
+export function statusText(status: EventStatus, locale: Locale = 'zh-CN'): string {
+  return translate(locale, STATUS_TEXT[status])
 }
 
 export function canPerform(
   status: EventStatus,
   action: EventAction,
   actor: ActorRole,
+  locale: Locale = 'zh-CN',
 ): { ok: true } | { ok: false; reason: string } {
   const allowed = RULES[status][action]
-  if (!allowed) return { ok: false, reason: `这局${STATUS_TEXT[status]}，现在不能这么做` }
-  if (!allowed.includes(actor)) return { ok: false, reason: actor === 'host' ? '组局的人不能这么做' : '只有组局的人能这么做' }
+  if (!allowed) return { ok: false, reason: translate(locale, '这局{0}，现在不能这么做', statusText(status, locale)) }
+  if (!allowed.includes(actor)) return { ok: false, reason: translate(locale, actor === 'host' ? '组局的人不能这么做' : '只有组局的人能这么做') }
   return { ok: true }
 }
 

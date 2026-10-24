@@ -1,5 +1,5 @@
+import { t, useLocale, getLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Text, View } from '@tarojs/components'
-import { useDidShow } from '@tarojs/taro'
 import { useState } from 'react'
 import { zoneLabel, type CalendarFeedResponse, type CalendarItem, type CalendarResponse } from '@couju/core'
 import { Page } from '../../components/Page'
@@ -31,12 +31,13 @@ function shiftMonth(month: string, delta: number): string {
 function dayTitle(date: string): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number]
   const wd = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7
-  return `${m}/${d} 周${WEEK[wd]}`
+  return t('{0}/{1} 周{2}', m, d, t(WEEK[wd]!))
 }
 
 const needsReply = (i: CalendarItem) => i.kind === 'candidate' && i.myAvailability === null
 
 export default function CalendarPage() {
+  useLocale()
   const { user } = useSession()
   const [data, setData] = useState<CalendarResponse | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -58,18 +59,18 @@ export default function CalendarPage() {
       toastError(e)
     }
   }
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     void load(data?.month)
   })
 
   if (!user) {
     return (
       <Page nav='calendar'>
-        <View className='h1 mt8'>日历</View>
+        <View className='h1 mt8'>{t('日历')}</View>
         <Card className='mt16'>
-          <Empty icon='🗓️' text='先让朋友知道你是谁，这里就会出现你的局'>
+          <Empty icon='🗓️' text={t('先让朋友知道你是谁，这里就会出现你的局')}>
             <Button kind='primary' className='mt12' onClick={() => void requireUser().then(() => load())}>
-              起个名字
+              {t('起个名字')}
             </Button>
           </Empty>
         </Card>
@@ -93,10 +94,10 @@ export default function CalendarPage() {
   return (
     <Page nav='calendar'>
       <View className='row row--between mt8'>
-        <View className='h1'>日历</View>
-        <Text className='muted'>按{zoneLabel(data.timezone)}</Text>
+        <View className='h1'>{t('日历')}</View>
+        <Text className='muted'>{t('按{0}', zoneLabel(data.timezone, getLocale()))}</Text>
       </View>
-      {pending > 0 && <View className='sub mt4'>这个月有 {pending} 个时间在等你回话</View>}
+      {pending > 0 && <View className='sub mt4'>{t('这个月有 {0} 个时间在等你回话', pending)}</View>}
 
       <View className='cal mt16'>
         <View className='row row--between cal__bar'>
@@ -104,12 +105,10 @@ export default function CalendarPage() {
             <Icon name='left' />
           </View>
           <View className='col' style={{ alignItems: 'center' }}>
-            <Text className='h3'>
-              {y} 年 {Number(m)} 月
-            </Text>
+            <Text className='h3'>{t('{0} 年 {1}月', y, Number(m))}</Text>
             {!data.today.startsWith(data.month) && (
               <Text className='link small' onClick={() => void load()}>
-                回到今天
+                {t('回到今天')}
               </Text>
             )}
           </View>
@@ -120,7 +119,7 @@ export default function CalendarPage() {
         <View className='cal__grid'>
           {WEEK.map((w) => (
             <View key={w} className='cal__head'>
-              {w}
+              {t(w)}
             </View>
           ))}
           {monthGrid(data.month).map((date, i) => {
@@ -128,11 +127,19 @@ export default function CalendarPage() {
             const items = byDate.get(date) ?? []
             const confirmed = items.some((x) => x.kind === 'confirmed')
             const waiting = items.some(needsReply)
-            const answered = items.some((x) => x.kind === 'candidate' && x.myAvailability !== null) || items.some((x) => x.kind === 'waitlist')
+            const answered =
+              items.some((x) => x.kind === 'candidate' && x.myAvailability !== null) || items.some((x) => x.kind === 'waitlist')
             const past = date < data.today
             return (
               <View key={date} className='cal__cell' onClick={() => setSelected(date)}>
-                <View className={cx('cal__day', date === data.today && 'cal__day--today', date === selected && 'cal__day--on', past && 'cal__day--past')}>
+                <View
+                  className={cx(
+                    'cal__day',
+                    date === data.today && 'cal__day--today',
+                    date === selected && 'cal__day--on',
+                    past && 'cal__day--past',
+                  )}
+                >
                   {Number(date.slice(8))}
                 </View>
                 <View className='cal__dots'>
@@ -147,28 +154,31 @@ export default function CalendarPage() {
         <View className='row gap12 cal__legend'>
           <View className='row gap4'>
             <View className='cal__dot cal__dot--ok' />
-            <Text className='muted'>成了</Text>
+            <Text className='muted'>{t('成了')}</Text>
           </View>
           <View className='row gap4'>
             <View className='cal__dot cal__dot--wait' />
-            <Text className='muted'>等你回话</Text>
+            <Text className='muted'>{t('等你回话')}</Text>
           </View>
           <View className='row gap4'>
             <View className='cal__dot cal__dot--soft' />
-            <Text className='muted'>已回话 / 候补</Text>
+            <Text className='muted'>{t('已回话 / 候补')}</Text>
           </View>
         </View>
       </View>
 
       {selected && (
         <>
-          <SectionTitle title={dayTitle(selected)} extra={dayItems.length ? <Text className='sub small'>{dayItems.length} 个</Text> : undefined} />
+          <SectionTitle
+            title={dayTitle(selected)}
+            extra={dayItems.length ? <Text className='sub small'>{t('{0} 个', dayItems.length)}</Text> : undefined}
+          />
           {dayItems.length === 0 ? (
             <View className='empty'>
-              这天没局。
+              {t('这天没局。')}
               {selected >= data.today && (
                 <Text className='link' onClick={() => go('/pages/event/create')}>
-                  要不要组一个？
+                  {t('要不要组一个？')}
                 </Text>
               )}
             </View>
@@ -176,14 +186,16 @@ export default function CalendarPage() {
             dayItems.map((it) => (
               <View key={`${it.code}-${it.slotId}`} className='episode' onClick={() => go(eventPath(it.code))}>
                 <View className='row wrap gap8'>
-                  {it.kind === 'confirmed' && <Tag tone='ok'>成了</Tag>}
-                  {it.kind === 'waitlist' && <Tag>候补中</Tag>}
-                  {needsReply(it) && <Tag tone='warn'>等你回话</Tag>}
+                  {it.kind === 'confirmed' && <Tag tone='ok'>{t('成了')}</Tag>}
+                  {it.kind === 'waitlist' && <Tag>{t('候补中')}</Tag>}
+                  {needsReply(it) && <Tag tone='warn'>{t('等你回话')}</Tag>}
                   {it.kind === 'candidate' && it.myAvailability && (
-                    <Tag>{it.myAvailability === 'yes' ? '你说可以' : it.myAvailability === 'maybe' ? '你说看情况' : '你说不行'}</Tag>
+                    <Tag>
+                      {it.myAvailability === 'yes' ? t('你说可以') : it.myAvailability === 'maybe' ? t('你说看情况') : t('你说不行')}
+                    </Tag>
                   )}
-                  {it.kind === 'candidate' && <Text className='muted'>候选时间</Text>}
-                  {it.isHost && <Text className='muted'>我组的</Text>}
+                  {it.kind === 'candidate' && <Text className='muted'>{t('候选时间')}</Text>}
+                  {it.isHost && <Text className='muted'>{t('我组的')}</Text>}
                 </View>
                 <View className='episode__title'>
                   {it.emoji} {it.title}
@@ -202,12 +214,13 @@ export default function CalendarPage() {
 
 /** 订阅到手机日历（ICS） */
 function FeedCard() {
+  useLocale()
   const [status, setStatus] = useState<CalendarFeedResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [help, setHelp] = useState(false)
   const [open, setOpen] = useState(false)
 
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     get<CalendarFeedResponse>('/api/me/calendar-feed')
       .then(setStatus)
       .catch(() => undefined)
@@ -218,7 +231,12 @@ function FeedCard() {
   const localOnly = /\/\/(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin)
 
   const rotate = async () => {
-    if (status?.enabled && !status.path && !(await confirm('重新生成链接？', '旧的订阅链接会失效，需要在日历里重新订阅。', '重新生成'))) return
+    if (
+      status?.enabled &&
+      !status.path &&
+      !(await confirm(t('重新生成链接？'), t('旧的订阅链接会失效，需要在日历里重新订阅。'), t('重新生成')))
+    )
+      return
     setBusy(true)
     try {
       setStatus(await post<CalendarFeedResponse>('/api/me/calendar-feed'))
@@ -233,72 +251,77 @@ function FeedCard() {
     <>
       <View className='list-row mt24' onClick={() => setOpen(true)}>
         <Icon name='calendar' />
-        <Text className='flex1'>订阅到手机日历</Text>
-        {status?.enabled && <Text className='sub'>开着</Text>}
+        <Text className='flex1'>{t('订阅到手机日历')}</Text>
+        {status?.enabled && <Text className='sub'>{t('开着')}</Text>}
         <Icon name='right' size='sm' color={FAINT} />
       </View>
-      <Sheet open={open} onClose={() => setOpen(false)} title='订阅到手机日历'>
-        <View className='sub mt8'>成了的局会自动出现在手机日历里，改时间、取消也会同步。</View>
+      <Sheet open={open} onClose={() => setOpen(false)} title={t('订阅到手机日历')}>
+        <View className='sub mt8'>{t('成了的局会自动出现在手机日历里，改时间、取消也会同步。')}</View>
 
         {url ? (
           <>
             <View className='share-text mt12'>{url}</View>
-            <View className='muted mt4'>只显示这一次，别发到群里。</View>
+            <View className='muted mt4'>{t('只显示这一次，别发到群里。')}</View>
             <View className='row wrap gap8 mt12'>
-              <Button kind='primary' size='sm' onClick={() => void copyText(url, '复制好了，去日历里粘贴')}>
-                复制链接
+              <Button kind='primary' size='sm' onClick={() => void copyText(url, t('复制好了，去日历里粘贴'))}>
+                {t('复制链接')}
               </Button>
               {isH5 && (
                 <Button kind='outline' size='sm' onClick={() => (window.location.href = url.replace(/^https?:/, 'webcal:'))}>
-                  用日历打开
+                  {t('用日历打开')}
                 </Button>
               )}
             </View>
           </>
         ) : status?.enabled ? (
           <View className='row wrap gap8 mt12'>
-            <Text className='ok-text'>✓ 已开启订阅</Text>
+            <Text className='ok-text'>{t('✓ 已开启订阅')}</Text>
             <Button size='sm' loading={busy} onClick={rotate}>
-              重新生成链接
+              {t('重新生成链接')}
             </Button>
             <Button
               size='sm'
               kind='danger'
               onClick={async () => {
-                if (!(await confirm('关闭订阅？', '日历里的这些局下次刷新时会消失。', '关闭'))) return
+                if (!(await confirm(t('关闭订阅？'), t('日历里的这些局下次刷新时会消失。'), t('关闭')))) return
                 setStatus(await del<CalendarFeedResponse>('/api/me/calendar-feed').catch(() => status))
               }}
             >
-              关闭
+              {t('关闭')}
             </Button>
           </View>
         ) : (
           <Button kind='outline' className='mt12' loading={busy} onClick={rotate}>
-            生成订阅链接
+            {t('生成订阅链接')}
           </Button>
         )}
 
         {localOnly && (url || status?.enabled) && (
-          <View className='muted mt8'>⚠️ 现在服务跑在你自己的电脑上，手机日历在外网访问不到这个地址。部署到公网后再订阅；电脑上的日历应用可以先试。</View>
+          <View className='muted mt8'>
+            {t('⚠️ 现在服务跑在你自己的电脑上，手机日历在外网访问不到这个地址。部署到公网后再订阅；电脑上的日历应用可以先试。')}
+          </View>
         )}
 
         <View className='mt12'>
           <Text className='link small' onClick={() => setHelp(!help)}>
-            {help ? '收起' : '怎么加到日历里？'}
+            {help ? t('收起') : t('怎么加到日历里？')}
           </Text>
         </View>
         {help && (
           <View className='mt8'>
             <View className='sub'>
-              <Text className='bold'>iPhone：</Text>点“用日历打开”；或 设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历，粘贴链接。
+              <Text className='bold'>iPhone：</Text>
+              {t('点“用日历打开”；或 设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历，粘贴链接。')}
             </View>
             <View className='sub mt4'>
-              <Text className='bold'>Google 日历：</Text>电脑网页版左侧“其他日历”旁的 ＋ → 通过网址添加 → 粘贴链接（手机端会自动同步）。
+              <Text className='bold'>{t('Google 日历：')}</Text>
+              {t('电脑网页版左侧“其他日历”旁的 ＋ → 通过网址添加 → 粘贴链接（手机端会自动同步）。')}
             </View>
             <View className='sub mt4'>
-              <Text className='bold'>Outlook：</Text>添加日历 → 从网络订阅 → 粘贴链接。
+              <Text className='bold'>Outlook：</Text>
+              {t('添加日历 → 从网络订阅 → 粘贴链接。')}
             </View>
-            <View className='muted mt4'>日历应用一般每隔几小时刷新一次，改动不会秒到。</View>
+            <View className='muted mt4'>{t('日历应用一般每隔几小时刷新一次，改动不会秒到。')}</View>
           </View>
         )}
       </Sheet>

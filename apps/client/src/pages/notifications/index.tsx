@@ -1,5 +1,6 @@
+import { t, useLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Text, View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro from '@tarojs/taro'
 import { useState } from 'react'
 import type { AppNotification, NotificationsResponse } from '@couju/core'
 import { Page } from '../../components/Page'
@@ -25,18 +26,19 @@ const ICON: Record<AppNotification['kind'], string> = {
 
 function ago(iso: string): string {
   const m = Math.floor((Date.now() - Date.parse(iso)) / 60000)
-  if (m < 1) return '刚刚'
-  if (m < 60) return `${m} 分钟前`
+  if (m < 1) return t('刚刚')
+  if (m < 60) return t('{0} 分钟前', m)
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} 小时前`
-  return `${Math.floor(h / 24)} 天前`
+  if (h < 24) return t('{0} 小时前', h)
+  return t('{0} 天前', Math.floor(h / 24))
 }
 
 /** 站内通知（已做频率限制）。微信订阅消息尚未接入。 */
 export default function Notifications() {
+  useLocale()
   const [data, setData] = useState<NotificationsResponse | null>(null)
 
-  useDidShow(() => {
+  useLocaleDidShow(() => {
     get<NotificationsResponse>('/api/notifications')
       .then((r) => {
         setData(r)
@@ -51,15 +53,15 @@ export default function Notifications() {
   return (
     <Page>
       <View className='row row--between'>
-        <View className='h1'>通知</View>
+        <View className='h1'>{t('通知')}</View>
         <Text className='link' onClick={() => back()}>
-          返回
+          {t('返回')}
         </Text>
       </View>
-      <View className='muted mt4'>同类提醒会合并、限频，不会刷屏。我们也讨厌被催。</View>
+      <View className='muted mt4'>{t('同类提醒会合并、限频，不会刷屏。我们也讨厌被催。')}</View>
       <View className='mt16'>
         {!data && <Loading />}
-        {data && data.items.length === 0 && <Empty icon='🔕' text='安安静静，没有新消息' />}
+        {data && data.items.length === 0 && <Empty icon='🔕' text={t('安安静静，没有新消息')} />}
         {data?.items.map((n) => (
           <Card key={n.id} onClick={() => n.link && void Taro.navigateTo({ url: n.link }).catch(() => Taro.redirectTo({ url: n.link }))}>
             <View className='row row--top gap12'>

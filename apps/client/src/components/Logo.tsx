@@ -1,3 +1,4 @@
+import { useLocale } from '../lib/i18n'
 import { Image } from '@tarojs/components'
 
 /**
@@ -20,9 +21,17 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" vi
 </g>
 </svg>`
 
-const SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(SVG)}`
+const sources = {
+  'zh-CN': `data:image/svg+xml;charset=utf-8,${encodeURIComponent(SVG)}`,
+  en: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+    SVG.replace('>算我<', '>ONE<')
+      .replace('>一个<', '>MORE<')
+      .replace(/font-size="25"/g, 'font-size="18"'),
+  )}`,
+}
 
 /** 尺寸用 CSS 类（Taro H5 会二次换算行内样式里的 px） */
 export function Logo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  return <Image src={SRC} className={`logo logo--${size}`} mode='scaleToFill' />
+  const locale = useLocale()
+  return <Image src={sources[locale]} aria-label='OneMore' className={`logo logo--${size}`} mode='scaleToFill' />
 }

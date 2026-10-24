@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n'
 import type { EventOption, EventResponse, GameEvent, RoleRequirement, TimeSlot, UserId } from './types'
 import { compareUtc } from './time'
 
@@ -193,8 +194,8 @@ export function checkRoster(
 }
 
 /** 给人看的进度描述，例如 “还差 1 人（需要 1 位 KP/GM）” */
-export function describeProgress(combo: Pick<ComboEvaluation, 'feasible' | 'stillNeed' | 'missingRoles' | 'full'>): string {
-  if (combo.feasible) return combo.full ? '人齐了，已满员' : '人数够了，可以开局'
-  const roles = combo.missingRoles.map((m) => `${m.need} 位 ${m.label}`).join('、')
-  return roles ? `还差 ${combo.stillNeed} 人（需要 ${roles}）` : `还差 ${combo.stillNeed} 人`
+export function describeProgress(combo: Pick<ComboEvaluation, 'feasible' | 'stillNeed' | 'missingRoles' | 'full'>, locale: Locale = 'zh-CN'): string {
+  if (combo.feasible) return translate(locale, combo.full ? '人齐了，已满员' : '人数够了，可以开局')
+  const roles = combo.missingRoles.map((m) => translate(locale, '{0} 位 {1}', m.need, m.label)).join(locale === 'en' ? ', ' : '、')
+  return roles ? translate(locale, '还差 {0} 人（需要 {1}）', combo.stillNeed, roles) : translate(locale, '还差 {0} 人', combo.stillNeed)
 }

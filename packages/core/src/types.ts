@@ -1,3 +1,4 @@
+import type { Locale, Message } from './i18n'
 /**
  * 算我一个（代码名 couju）领域类型。所有时间均为 UTC ISO-8601 字符串（例如 "2026-10-24T01:00:00.000Z"），
  * 只在展示层按查看者的 IANA 时区转换。
@@ -7,9 +8,7 @@ export type UserId = string
 export type ISODateTime = string
 
 /** 账号绑定状态。guest = 仅凭本设备的登录令牌；bound = 已有可恢复的持久凭证。 */
-export type AccountBinding =
-  | { kind: 'guest' }
-  | { kind: 'bound'; method: 'recovery_code' | 'wechat'; boundAt: ISODateTime }
+export type AccountBinding = { kind: 'guest' } | { kind: 'bound'; method: 'recovery_code' | 'wechat'; boundAt: ISODateTime }
 
 export interface User {
   /** 不可变内部 ID */
@@ -21,6 +20,8 @@ export interface User {
   avatar: string
   /** IANA 时区，例如 America/Chicago、Asia/Shanghai */
   timezone: string
+  /** Explicit account language; older accounts may omit it. */
+  locale?: Locale
   /** 偏好的游戏 key（旧字段，保留兼容） */
   games: string[]
   /** 我的游戏：首次设置时从内置目录挑选，也可以自己添加/改人数。未设置时为 undefined */
@@ -177,6 +178,8 @@ export interface GameEvent {
   allowWaitlist: boolean
   status: EventStatus
   final: FinalPlan | null
+  /** Present only for new system-generated reasons; historical/user reasons remain verbatim. */
+  cancelReasonMessage?: Message
   cancelReason: string
   sourceInterestId: string | null
   createdAt: ISODateTime
@@ -213,10 +216,9 @@ export interface EventResponse {
 
 // ---------- 我想玩 ----------
 
-export type InterestAudience =
-  | { kind: 'favorites' }
-  | { kind: 'friends' }
-  | { kind: 'circles'; circleIds: string[] }
+export type InterestAudience = { kind: 'favorites' } | { kind: 'friends' } | { kind: 'circles'; circleIds: string[] }
+
+export type InterestWhenPreset = 'tonight' | 'this_weekend' | 'weekday_evenings' | 'next_week' | 'anytime'
 
 export type InterestStatus = 'active' | 'converted' | 'expired' | 'withdrawn'
 
@@ -230,6 +232,8 @@ export interface Interest {
   minPlayers: number
   /** 大概什么时候，例如“这周末”“工作日晚上”——只是提示，不做排期 */
   whenHint: string
+  /** New system presets carry identity; absent on historical/free-form records. */
+  whenPreset?: InterestWhenPreset
   note: string
   audience: InterestAudience
   joiners: { userId: UserId; at: ISODateTime }[]
@@ -256,6 +260,8 @@ export type NotificationKind =
   | 'join_request'
 
 export interface AppNotification {
+  titleMessage?: Message
+  bodyMessage?: Message
   objectId?: string
   id: string
   userId: UserId

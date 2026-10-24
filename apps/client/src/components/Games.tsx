@@ -1,3 +1,4 @@
+import { t, useLocale, localizeBuiltinGame } from '../lib/i18n'
 import { Input, Switch, Text, View } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { useEffect, useState } from 'react'
@@ -13,9 +14,10 @@ import { Button, Chip, Sheet, Stepper, cx } from './ui'
 const SKIP_KEY = 'couju.gamesSetupSkipped'
 
 export function useMyGames() {
+  useLocale()
   const { user } = useSession()
   return {
-    games: resolveMyGames(user?.myGames),
+    games: resolveMyGames(user?.myGames).map(localizeBuiltinGame),
     isSet: !!user?.myGames && user.myGames.length > 0,
     async save(list: MyGame[]) {
       const r = await patch<{ user: User }>('/api/me', { myGames: list })
@@ -34,12 +36,20 @@ export function shouldOfferSetup(user: User | null): boolean {
   }
 }
 
-export const playersText = (g: Pick<MyGame, 'minPlayers' | 'maxPlayers'>) => (g.minPlayers === g.maxPlayers ? `${g.minPlayers}人` : `${g.minPlayers}-${g.maxPlayers}人`)
+export const playersText = (g: Pick<MyGame, 'minPlayers' | 'maxPlayers'>) =>
+  g.minPlayers === g.maxPlayers ? t('{0}人', g.minPlayers) : t('{0}-{1}人', g.minPlayers, g.maxPlayers)
 
 const newId = () => `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
 /** 新建 / 编辑一个游戏 */
-export function GameEditor(props: { open: boolean; initial?: MyGame | null; onSave: (g: MyGame) => void; onDelete?: () => void; onClose: () => void }) {
+export function GameEditor(props: {
+  open: boolean
+  initial?: MyGame | null
+  onSave: (g: MyGame) => void
+  onDelete?: () => void
+  onClose: () => void
+}) {
+  useLocale()
   const blank: MyGame = { id: '', gameKey: null, name: '', emoji: '🎮', minPlayers: 2, maxPlayers: 6, needsGm: false }
   const [g, setG] = useState<MyGame>(props.initial ?? blank)
   useEffect(() => {
@@ -53,7 +63,7 @@ export function GameEditor(props: { open: boolean; initial?: MyGame | null; onSa
     })
   const isCatalog = !!g.gameKey
   return (
-    <Sheet open={props.open} onClose={props.onClose} title={props.initial ? '改一下' : '加个游戏'}>
+    <Sheet open={props.open} onClose={props.onClose} title={props.initial ? t('改一下') : t('加个游戏')}>
       {!isCatalog && (
         <>
           <View className='row wrap gap8 mt12'>
@@ -63,24 +73,30 @@ export function GameEditor(props: { open: boolean; initial?: MyGame | null; onSa
               </View>
             ))}
           </View>
-          <Input className='input mt12' placeholder='叫什么，比如：剧本杀' maxlength={20} value={g.name} onInput={(e) => set({ name: e.detail.value })} />
+          <Input
+            className='input mt12'
+            placeholder={t('叫什么，比如：剧本杀')}
+            maxlength={20}
+            value={localizeBuiltinGame(g).name}
+            onInput={(e) => set({ name: e.detail.value })}
+          />
         </>
       )}
       {isCatalog && (
         <View className='h3 mt12'>
-          {g.emoji} {g.name}
+          {g.emoji} {localizeBuiltinGame(g).name}
         </View>
       )}
       <View className='switch-row mt8'>
-        <Text>最少几人</Text>
+        <Text>{t('最少几人')}</Text>
         <Stepper value={g.minPlayers} min={1} max={50} onChange={(v) => set({ minPlayers: v })} />
       </View>
       <View className='switch-row'>
-        <Text>最多几人</Text>
+        <Text>{t('最多几人')}</Text>
         <Stepper value={g.maxPlayers} min={1} max={50} onChange={(v) => set({ maxPlayers: v })} />
       </View>
       <View className='switch-row'>
-        <Text>需要 KP/GM</Text>
+        <Text>{t('需要 KP/GM')}</Text>
         <Switch color='#FF2B2B' checked={g.needsGm} onChange={(e) => set({ needsGm: e.detail.value })} />
       </View>
       <Button
@@ -90,12 +106,12 @@ export function GameEditor(props: { open: boolean; initial?: MyGame | null; onSa
         disabled={!g.name.trim()}
         onClick={() => props.onSave({ ...g, name: g.name.trim(), id: g.id || newId() })}
       >
-        好了
+        {t('好了')}
       </Button>
       {props.onDelete && (
         <View className='center mt12'>
           <Text className='link small' onClick={props.onDelete}>
-            不玩这个了
+            {t('不玩这个了')}
           </Text>
         </View>
       )}
@@ -105,6 +121,7 @@ export function GameEditor(props: { open: boolean; initial?: MyGame | null; onSa
 
 /** 管理我的游戏（首次设置与“我”页共用） */
 export function GamesSheet(props: { open: boolean; onClose: () => void; firstTime?: boolean }) {
+  useLocale()
   const { games, isSet, save } = useMyGames()
   const [list, setList] = useState<MyGame[]>([])
   const [editing, setEditing] = useState<MyGame | null | undefined>(undefined) // undefined = 关闭；null = 新建
@@ -121,7 +138,7 @@ export function GamesSheet(props: { open: boolean; onClose: () => void; firstTim
   }
   const done = async () => {
     if (list.length === 0) {
-      toast('至少选一个')
+      toast(t('至少选一个'))
       return
     }
     setBusy(true)
@@ -145,24 +162,28 @@ export function GamesSheet(props: { open: boolean; onClose: () => void; firstTim
 
   return (
     <>
-      <Sheet open={props.open && editing === undefined} onClose={props.firstTime ? skip : props.onClose} title={props.firstTime ? '你们常玩什么？' : '我的游戏'}>
-        {props.firstTime && <View className='sub mt4'>选好了，组局时只显示这些。随时能改。</View>}
+      <Sheet
+        open={props.open && editing === undefined}
+        onClose={props.firstTime ? skip : props.onClose}
+        title={props.firstTime ? t('你们常玩什么？') : t('我的游戏')}
+      >
+        {props.firstTime && <View className='sub mt4'>{t('选好了，组局时只显示这些。随时能改。')}</View>}
         <View className='row wrap gap8 mt12'>
           {GAME_CATALOG.map((g) => (
             <Chip key={g.key} on={has(g.key)} onClick={() => toggleCatalog(g.key)}>
-              {g.emoji} {g.name}
+              {g.emoji} {localizeBuiltinGame(g).name}
             </Chip>
           ))}
           {list
             .filter((g) => !g.gameKey)
             .map((g) => (
               <Chip key={g.id} on onClick={() => setEditing(g)}>
-                {g.emoji} {g.name}
+                {g.emoji} {localizeBuiltinGame(g).name}
               </Chip>
             ))}
           <View className='chip chip--dashed' onClick={() => setEditing(null)}>
             <Icon name='plus' size='sm' color='#6b6b6b' />
-            <Text className='ml4'>自己加</Text>
+            <Text className='ml4'>{t('自己加')}</Text>
           </View>
         </View>
 
@@ -171,11 +192,11 @@ export function GamesSheet(props: { open: boolean; onClose: () => void; firstTim
             {list.map((g) => (
               <View key={g.id} className='list-row' onClick={() => setEditing(g)}>
                 <Text className='flex1'>
-                  {g.emoji} {g.name}
+                  {g.emoji} {localizeBuiltinGame(g).name}
                 </Text>
                 <Text className='muted'>
                   {playersText(g)}
-                  {g.needsGm ? ' · KP' : ''}
+                  {g.needsGm ? t(' · KP') : ''}
                 </Text>
                 <Icon name='right' size='sm' color='#a8a8a8' />
               </View>
@@ -184,12 +205,12 @@ export function GamesSheet(props: { open: boolean; onClose: () => void; firstTim
         )}
 
         <Button kind='primary' block size='lg' className='mt16' loading={busy} onClick={done}>
-          就这些
+          {t('就这些')}
         </Button>
         {props.firstTime && (
           <View className='center mt12'>
             <Text className='muted' onClick={skip}>
-              以后再说
+              {t('以后再说')}
             </Text>
           </View>
         )}

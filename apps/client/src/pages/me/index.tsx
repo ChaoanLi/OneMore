@@ -1,21 +1,48 @@
+import { t, useLocale, getLocale, useLocaleDidShow } from '../../lib/i18n'
 import { Input, Picker, Switch, Text, View } from '@tarojs/components'
-import Taro, { useDidShow, useLoad } from '@tarojs/taro'
+import Taro, { useLoad } from '@tarojs/taro'
 import { useEffect, useState, type ReactNode } from 'react'
 import { COMMON_TIMEZONES, zoneLabel, type EmailSettingsResponse, type User } from '@couju/core'
 import { GamesSheet, useMyGames } from '../../components/Games'
 import { FAINT, Icon, type IconName } from '../../components/Icon'
 import { Page } from '../../components/Page'
-import { Avatar, Button, Card, Sheet } from '../../components/ui'
+import { Avatar, Button, Card, Loading, Sheet } from '../../components/ui'
 import { del, get, patch, post } from '../../lib/api'
 import { APP_NAME } from '../../lib/brand'
 import { deviceTimezone, logout, requireUser, restoreAccount, setUser, useSession } from '../../lib/session'
 import { confirm, copyText, go, toast, toastError, toastOk } from '../../lib/ui'
 
-const AVATARS = ['🦊', '🐼', '🐯', '🐸', '🐧', '🦉', '🐙', '🦄', '🐳', '🐱', '🐶', '🐹', '🐨', '🦁', '🐰', '🐻', '🐵', '🐲', '👾', '🎮', '🀄', '🎲', '⚔️', '🌸']
+const AVATARS = [
+  '🦊',
+  '🐼',
+  '🐯',
+  '🐸',
+  '🐧',
+  '🦉',
+  '🐙',
+  '🦄',
+  '🐳',
+  '🐱',
+  '🐶',
+  '🐹',
+  '🐨',
+  '🦁',
+  '🐰',
+  '🐻',
+  '🐵',
+  '🐲',
+  '👾',
+  '🎮',
+  '🀄',
+  '🎲',
+  '⚔️',
+  '🌸',
+]
 
 type SheetName = 'profile' | 'games' | 'email' | 'account' | 'restore' | 'about' | null
 
 function Row(props: { icon: IconName; label: string; value?: ReactNode; onClick?: () => void; children?: ReactNode }) {
+  useLocale()
   return (
     <View className='list-row' onClick={props.onClick}>
       <Icon name={props.icon} />
@@ -31,6 +58,7 @@ function Row(props: { icon: IconName; label: string; value?: ReactNode; onClick?
 }
 
 export default function Me() {
+  useLocale()
   const { user, ready } = useSession()
   const { games, isSet } = useMyGames()
   const [sheet, setSheet] = useState<SheetName>(null)
@@ -40,11 +68,14 @@ export default function Me() {
     if (params?.restore === '1') setSheet('restore')
     if (params?.email === '1') setSheet('email')
   })
-  useDidShow(() => {
-    if (user) get<EmailSettingsResponse>('/api/me/email').then(setEmail).catch(() => undefined)
+  useLocaleDidShow(() => {
+    if (user)
+      get<EmailSettingsResponse>('/api/me/email')
+        .then(setEmail)
+        .catch(() => undefined)
   })
 
-  const save = async (body: Partial<Pick<User, 'timezone' | 'roles' | 'avatar'>>, msg = '好了') => {
+  const save = async (body: Partial<Pick<User, 'timezone' | 'roles' | 'avatar'>>, msg = t('好了')) => {
     try {
       const r = await patch<{ user: User }>('/api/me', body)
       setUser(r.user)
@@ -57,16 +88,16 @@ export default function Me() {
   if (ready && !user) {
     return (
       <Page nav='me'>
-        <View className='h1 mt8'>我</View>
+        <View className='h1 mt8'>{t('我')}</View>
         <Card className='mt16'>
-          <View className='h3'>还没起名字</View>
+          <View className='h3'>{t('还没起名字')}</View>
           <Button kind='primary' className='mt12' onClick={() => void requireUser()}>
-            起个名字
+            {t('起个名字')}
           </Button>
         </Card>
         <View className='center mt16'>
           <Text className='link' onClick={() => setSheet('restore')}>
-            恢复账号
+            {t('恢复账号')}
           </Text>
         </View>
         <RestoreSheet open={sheet === 'restore'} onClose={() => setSheet(null)} hasUnboundGuest={false} />
@@ -76,7 +107,7 @@ export default function Me() {
   if (!user) return <Page nav='me' />
 
   const zones = [...new Set([user.timezone, deviceTimezone(), ...COMMON_TIMEZONES])]
-  const emailText = email?.email ? (email.enabled ? '开着' : '关了') : email?.pending ? '待验证' : '没设置'
+  const emailText = email?.email ? (email.enabled ? t('开着') : t('关了')) : email?.pending ? t('待验证') : t('没设置')
 
   return (
     <Page nav='me'>
@@ -90,24 +121,43 @@ export default function Me() {
       </View>
 
       <Card className='mt24'>
-        <Row icon='gamepad' label='我的游戏' value={isSet ? `${games.length} 个` : '还没选'} onClick={() => setSheet('games')} />
-        <Row icon='hand' label='我能当 KP/GM'>
-          <Switch color='#FF2B2B' checked={user.roles.includes('gm')} onChange={(e) => void save({ roles: e.detail.value ? ['gm'] : [] })} />
+        <Row
+          icon='gamepad'
+          label={t('我的游戏')}
+          value={isSet ? t('{0} 个', games.length) : t('还没选')}
+          onClick={() => setSheet('games')}
+        />
+        <Row icon='hand' label={t('我能当 KP/GM')}>
+          <Switch
+            color='#FF2B2B'
+            checked={user.roles.includes('gm')}
+            onChange={(e) => void save({ roles: e.detail.value ? ['gm'] : [] })}
+          />
         </Row>
-        <Picker mode='selector' range={zones.map((z) => `${zoneLabel(z)}（${z}）`)} value={Math.max(0, zones.indexOf(user.timezone))} onChange={(e) => void save({ timezone: zones[Number(e.detail.value)]! }, '时区改好了')}>
-          <Row icon='globe' label='时区' value={zoneLabel(user.timezone)} />
+        <Picker
+          mode='selector'
+          range={zones.map((z) => `${zoneLabel(z, getLocale())}（${z}）`)}
+          value={Math.max(0, zones.indexOf(user.timezone))}
+          onChange={(e) => void save({ timezone: zones[Number(e.detail.value)]! }, t('时区改好了'))}
+        >
+          <Row icon='globe' label={t('时区')} value={zoneLabel(user.timezone, getLocale())} />
         </Picker>
       </Card>
 
       <Card className='mt12'>
-        <Row icon='mail' label='邮件提醒' value={emailText} onClick={() => setSheet('email')} />
-        <Row icon='calendar' label='订阅到手机日历' onClick={() => go('/pages/calendar/index')} />
-        <Row icon='key' label='账号' value={user.account.kind === 'bound' ? '已绑定' : '只在这台设备'} onClick={() => setSheet('account')} />
+        <Row icon='mail' label={t('邮件提醒')} value={emailText} onClick={() => setSheet('email')} />
+        <Row icon='calendar' label={t('订阅到手机日历')} onClick={() => go('/pages/calendar/index')} />
+        <Row
+          icon='key'
+          label={t('账号')}
+          value={user.account.kind === 'bound' ? t('已绑定') : t('只在这台设备')}
+          onClick={() => setSheet('account')}
+        />
       </Card>
 
       <View className='center mt24'>
         <Text className='muted' onClick={() => setSheet('about')}>
-          关于这个版本
+          {t('关于这个版本')}
         </Text>
       </View>
 
@@ -116,17 +166,18 @@ export default function Me() {
       <EmailSheet open={sheet === 'email'} onClose={() => setSheet(null)} onChange={setEmail} />
       <AccountSheet open={sheet === 'account'} user={user} onClose={() => setSheet(null)} onRestore={() => setSheet('restore')} />
       <RestoreSheet open={sheet === 'restore'} onClose={() => setSheet(null)} hasUnboundGuest={user.account.kind === 'guest'} />
-      <Sheet open={sheet === 'about'} onClose={() => setSheet(null)} title='还没接上的'>
-        <View className='sub mt8'>· 微信登录和小程序版本</View>
-        <View className='sub mt4'>· 微信消息推送（现在有站内通知和邮件）</View>
-        <View className='sub mt4'>· DeepSeek（没配置时“随口说一句”用的是关键词规则）</View>
-        <View className='sub mt4'>· 腾讯云 CloudBase（现在数据存在自己的服务器上）</View>
+      <Sheet open={sheet === 'about'} onClose={() => setSheet(null)} title={t('还没接上的')}>
+        <View className='sub mt8'>{t('· 微信登录和小程序版本')}</View>
+        <View className='sub mt4'>{t('· 微信消息推送（现在有站内通知和邮件）')}</View>
+        <View className='sub mt4'>{t('· DeepSeek（没配置时“随口说一句”用的是关键词规则）')}</View>
+        <View className='sub mt4'>{t('· 腾讯云 CloudBase（现在数据存在自己的服务器上）')}</View>
       </Sheet>
     </Page>
   )
 }
 
 function ProfileSheet(props: { open: boolean; user: User; onClose: () => void }) {
+  useLocale()
   const [nickname, setNickname] = useState(props.user.nickname)
   const [handle, setHandle] = useState(props.user.handle)
   const [avatar, setAvatar] = useState(props.user.avatar)
@@ -143,7 +194,7 @@ function ProfileSheet(props: { open: boolean; user: User; onClose: () => void })
     try {
       const r = await patch<{ user: User }>('/api/me', { nickname: nickname.trim(), handle: handle.trim().toLowerCase(), avatar })
       setUser(r.user)
-      toastOk('好了')
+      toastOk(t('好了'))
       props.onClose()
     } catch (e) {
       toastError(e)
@@ -152,7 +203,7 @@ function ProfileSheet(props: { open: boolean; user: User; onClose: () => void })
     }
   }
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='我的资料'>
+    <Sheet open={props.open} onClose={props.onClose} title={t('我的资料')}>
       <View className='row wrap gap8 mt12'>
         {AVATARS.map((a) => (
           <View key={a} className={a === avatar ? 'emoji-pick emoji-pick--on' : 'emoji-pick'} onClick={() => setAvatar(a)}>
@@ -160,10 +211,16 @@ function ProfileSheet(props: { open: boolean; user: User; onClose: () => void })
           </View>
         ))}
       </View>
-      <Input className='input mt12' placeholder='昵称' maxlength={20} value={nickname} onInput={(e) => setNickname(e.detail.value)} />
-      <Input className='input mt8' placeholder='ID（朋友用它加你）' maxlength={20} value={handle} onInput={(e) => setHandle(e.detail.value.toLowerCase())} />
+      <Input className='input mt12' placeholder={t('昵称')} maxlength={20} value={nickname} onInput={(e) => setNickname(e.detail.value)} />
+      <Input
+        className='input mt8'
+        placeholder={t('ID（朋友用它加你）')}
+        maxlength={20}
+        value={handle}
+        onInput={(e) => setHandle(e.detail.value.toLowerCase())}
+      />
       <Button kind='primary' block className='mt16' loading={busy} disabled={!nickname.trim()} onClick={saveAll}>
-        保存
+        {t('保存')}
       </Button>
     </Sheet>
   )
@@ -171,6 +228,7 @@ function ProfileSheet(props: { open: boolean; user: User; onClose: () => void })
 
 /** 邮件提醒：留邮箱 → 验证码 → 开关 */
 function EmailSheet(props: { open: boolean; onClose: () => void; onChange: (s: EmailSettingsResponse) => void }) {
+  const locale = useLocale()
   const [s, setS] = useState<EmailSettingsResponse | null>(null)
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -178,8 +236,17 @@ function EmailSheet(props: { open: boolean; onClose: () => void; onChange: (s: E
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (props.open) get<EmailSettingsResponse>('/api/me/email').then(setS).catch(toastError)
-  }, [props.open])
+    if (!props.open) return
+    let current = true
+    get<EmailSettingsResponse>('/api/me/email')
+      .then((value) => {
+        if (current) setS(value)
+      })
+      .catch(toastError)
+    return () => {
+      current = false
+    }
+  }, [props.open, locale])
 
   const run = async (fn: () => Promise<EmailSettingsResponse>, ok?: string) => {
     setBusy(true)
@@ -199,52 +266,83 @@ function EmailSheet(props: { open: boolean; onClose: () => void; onChange: (s: E
   }
 
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='邮件提醒'>
-      {!s ? null : s.email ? (
+    <Sheet open={props.open} onClose={props.onClose} title={t('邮件提醒')}>
+      {!s ? (
+        <Loading />
+      ) : s.email ? (
         <>
           <View className='switch-row mt8'>
             <Text className='bold flex1'>{s.email}</Text>
-            <Switch color='#FF2B2B' checked={s.enabled} onChange={(e) => void run(() => patch('/api/me/email', { enabled: e.detail.value }))} />
+            <Switch
+              color='#FF2B2B'
+              checked={s.enabled}
+              onChange={(e) => void run(() => patch('/api/me/email', { enabled: e.detail.value }))}
+            />
           </View>
-          <View className='muted'>成团、差人、取消时发邮件。夜里不发。</View>
+          <View className='muted'>{t('成团、差人、取消时发邮件。夜里不发。')}</View>
           <View className='mt12'>
             <Text className='link small' onClick={() => void run(() => del('/api/me/email')).then(() => setEmail(''))}>
-              换个邮箱
+              {t('换个邮箱')}
             </Text>
           </View>
         </>
       ) : !s.pending ? (
         <>
-          <View className='sub mt8'>成团、差人、取消时发邮件告诉你。</View>
-          <Input className='input mt12' placeholder='你的邮箱' value={email} onInput={(e) => setEmail(e.detail.value)} />
-          <Button kind='primary' block className='mt12' loading={busy} disabled={!email.trim()} onClick={() => void run(() => post('/api/me/email', { email: email.trim() }))}>
-            发验证码
+          <View className='sub mt8'>{t('成团、差人、取消时发邮件告诉你。')}</View>
+          <Input className='input mt12' placeholder={t('你的邮箱')} value={email} onInput={(e) => setEmail(e.detail.value)} />
+          <Button
+            kind='primary'
+            block
+            className='mt12'
+            loading={busy}
+            disabled={!email.trim()}
+            onClick={() => void run(() => post('/api/me/email', { email: email.trim() }))}
+          >
+            {t('发验证码')}
           </Button>
         </>
       ) : (
         <>
-          <View className='sub mt8'>验证码发到 {s.pending} 了</View>
+          <View className='sub mt8'>{t('验证码发到 {0} 了', s.pending)}</View>
           {devCode && s.transport === 'console' && <View className='code-box mt8'>{devCode}</View>}
-          <Input className='input mt12' type='number' maxlength={6} placeholder='6 位验证码' value={code} onInput={(e) => setCode(e.detail.value)} />
-          <Button kind='primary' block className='mt12' loading={busy} disabled={code.trim().length !== 6} onClick={() => void run(() => post('/api/me/email/verify', { code: code.trim() }), '好了').then((r) => r && setCode(''))}>
-            验证
+          <Input
+            className='input mt12'
+            type='number'
+            maxlength={6}
+            placeholder={t('6 位验证码')}
+            value={code}
+            onInput={(e) => setCode(e.detail.value)}
+          />
+          <Button
+            kind='primary'
+            block
+            className='mt12'
+            loading={busy}
+            disabled={code.trim().length !== 6}
+            onClick={() => void run(() => post('/api/me/email/verify', { code: code.trim() }), t('好了')).then((r) => r && setCode(''))}
+          >
+            {t('验证')}
           </Button>
           <View className='row gap12 mt12'>
-            <Text className='link small' onClick={() => s.pending && void run(() => post('/api/me/email', { email: s.pending }), '重新发了')}>
-              重发
+            <Text
+              className='link small'
+              onClick={() => s.pending && void run(() => post('/api/me/email', { email: s.pending }), t('重新发了'))}
+            >
+              {t('重发')}
             </Text>
             <Text className='link small' onClick={() => void run(() => del('/api/me/email'))}>
-              换个邮箱
+              {t('换个邮箱')}
             </Text>
           </View>
         </>
       )}
-      {s?.transport === 'console' && <View className='muted mt12'>演示模式：还没配置发信邮箱，邮件不会真的发出。</View>}
+      {s?.transport === 'console' && <View className='muted mt12'>{t('演示模式：还没配置发信邮箱，邮件不会真的发出。')}</View>}
     </Sheet>
   )
 }
 
 function AccountSheet(props: { open: boolean; user: User; onClose: () => void; onRestore: () => void }) {
+  useLocale()
   const [code, setCode] = useState<string | null>(null)
   const bound = props.user.account.kind === 'bound'
   useEffect(() => {
@@ -252,7 +350,7 @@ function AccountSheet(props: { open: boolean; user: User; onClose: () => void; o
   }, [props.open])
 
   const generate = async () => {
-    if (bound && !(await confirm('重新生成恢复码？', '旧的会失效。'))) return
+    if (bound && !(await confirm(t('重新生成恢复码？'), t('旧的会失效。')))) return
     try {
       const r = await post<{ recoveryCode: string; user: User }>('/api/me/recovery-code')
       setUser(r.user)
@@ -263,39 +361,48 @@ function AccountSheet(props: { open: boolean; user: User; onClose: () => void; o
   }
 
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='账号'>
+    <Sheet open={props.open} onClose={props.onClose} title={t('账号')}>
       {code ? (
         <>
-          <View className='sub mt8'>只显示这一次，截图保存。换手机时用 ID + 恢复码找回。</View>
+          <View className='sub mt8'>{t('只显示这一次，截图保存。换手机时用 ID + 恢复码找回。')}</View>
           <View className='sub mt8'>
             ID：<Text className='bold'>{props.user.handle}</Text>
           </View>
           <View className='code-box mt8'>{code}</View>
-          <Button kind='primary' block className='mt16' onClick={() => void copyText(`${APP_NAME} ID：${props.user.handle}\n恢复码：${code}`, '复制好了')}>
-            复制
+          <Button
+            kind='primary'
+            block
+            className='mt16'
+            onClick={() => void copyText(t('{0} ID：{1}\n恢复码：{2}', APP_NAME, props.user.handle, code), t('复制好了'))}
+          >
+            {t('复制')}
           </Button>
         </>
       ) : (
         <>
-          <View className='sub mt8'>{bound ? '已绑定恢复码，换手机也能找回。' : '现在只存在这台设备上。生成恢复码，换手机也能找回。'}</View>
+          <View className='sub mt8'>
+            {bound ? t('已绑定恢复码，换手机也能找回。') : t('现在只存在这台设备上。生成恢复码，换手机也能找回。')}
+          </View>
           <Button kind='outline' block className='mt12' onClick={generate}>
-            {bound ? '重新生成恢复码' : '生成恢复码'}
+            {bound ? t('重新生成恢复码') : t('生成恢复码')}
           </Button>
           <View className='row row--between mt16'>
             <Text className='link' onClick={props.onRestore}>
-              切换账号
+              {t('切换账号')}
             </Text>
             <Text
               className='muted'
               onClick={async () => {
-                if (await confirm('退出？', bound ? '之后用 ID + 恢复码登录。' : '还没生成恢复码，退出后找不回这个身份。', '退出')) {
+                if (
+                  await confirm(t('退出？'), bound ? t('之后用 ID + 恢复码登录。') : t('还没生成恢复码，退出后找不回这个身份。'), t('退出'))
+                ) {
                   logout()
                   props.onClose()
-                  toast('已退出')
+                  toast(t('已退出'))
                 }
               }}
             >
-              退出
+              {t('退出')}
             </Text>
           </View>
         </>
@@ -305,15 +412,16 @@ function AccountSheet(props: { open: boolean; user: User; onClose: () => void; o
 }
 
 function RestoreSheet(props: { open: boolean; onClose: () => void; hasUnboundGuest: boolean }) {
+  useLocale()
   const [handle, setHandle] = useState('')
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async () => {
-    if (props.hasUnboundGuest && !(await confirm('切换账号？', '当前身份还没生成恢复码，切换后找不回。', '仍然切换'))) return
+    if (props.hasUnboundGuest && !(await confirm(t('切换账号？'), t('当前身份还没生成恢复码，切换后找不回。'), t('仍然切换')))) return
     setBusy(true)
     try {
       const u = await restoreAccount(handle.trim().toLowerCase(), code.trim())
-      toastOk(`欢迎回来，${u.nickname}`)
+      toastOk(t('欢迎回来，{0}', u.nickname))
       props.onClose()
       void Taro.redirectTo({ url: '/pages/index/index' })
     } catch (e) {
@@ -323,11 +431,19 @@ function RestoreSheet(props: { open: boolean; onClose: () => void; hasUnboundGue
     }
   }
   return (
-    <Sheet open={props.open} onClose={props.onClose} title='恢复账号'>
+    <Sheet open={props.open} onClose={props.onClose} title={t('恢复账号')}>
       <Input className='input mt12' placeholder='ID' value={handle} onInput={(e) => setHandle(e.detail.value)} />
-      <Input className='input mt8' placeholder='恢复码' value={code} onInput={(e) => setCode(e.detail.value)} onConfirm={submit} />
-      <Button kind='primary' block size='lg' className='mt16' loading={busy} disabled={!handle.trim() || code.trim().length < 8} onClick={submit}>
-        恢复
+      <Input className='input mt8' placeholder={t('恢复码')} value={code} onInput={(e) => setCode(e.detail.value)} onConfirm={submit} />
+      <Button
+        kind='primary'
+        block
+        size='lg'
+        className='mt16'
+        loading={busy}
+        disabled={!handle.trim() || code.trim().length < 8}
+        onClick={submit}
+      >
+        {t('恢复')}
       </Button>
     </Sheet>
   )

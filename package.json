@@ -2,7 +2,7 @@
   "name": "couju",
   "version": "0.1.0",
   "private": true,
-  "description": "算我一个：熟人轻社交组局 MVP（Taro H5 + Node API）",
+  "description": "OneMore: less planning, more playing. Bilingual scheduling for independent groups of friends.",
   "workspaces": [
     "packages/core",
     "apps/server",
@@ -18,11 +18,14 @@
     "typecheck": "npm run build:core && npm run typecheck -w @couju/core && npm run typecheck -w @couju/server && npm run typecheck -w @couju/client"
   },
   "devDependencies": {
+    "@types/react-dom": "^18.3.7",
     "ajv": "^8.17.1",
     "concurrently": "^9.2.1",
+    "jsdom": "^24.1.3",
     "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=22.13"
-  }
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
 }

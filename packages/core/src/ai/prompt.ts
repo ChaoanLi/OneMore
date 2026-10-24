@@ -25,5 +25,8 @@ export function buildDraftSystemPrompt(ctx: DraftContext): string {
     `- uncertain: 字段名数组，取值 ${DRAFT_FIELDS.map((f) => `"${f}"`).join(' | ')}，列出你不确定或用户没说清的字段`,
     '',
     '没提到的信息用 null 并放进 uncertain，不要编造。',
+    ctx.locale === 'en'
+      ? 'Output language: English. Write suggested titles and built-in game labels in English. Preserve user-authored names, circle names, notes and custom game names verbatim. Keep all JSON keys and enum values unchanged.'
+      : '输出语言：简体中文。保留用户自定义的名称、圈子名、备注和自定义游戏名，不要翻译或改写；JSON 字段名和枚举值保持不变。',
   ].join('\n')
 }

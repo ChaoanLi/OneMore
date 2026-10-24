@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="600" viewBox="0 0 1440 600" role="img" aria-labelledby="title desc">
+<title id="title">OneMore — Less planning. More playing.</title><desc id="desc">A warm white poster with black lettering, a red hand-drawn circle and an invitation to make time for friends.</desc>
+<rect width="1440" height="600" fill="#f8f6f1"/>
+<g fill="none" stroke="#e9e5dc" stroke-width="1"><path d="M0 100H1440M0 200H1440M0 300H1440M0 400H1440M0 500H1440"/><path d="M100 0V600M200 0V600M300 0V600M400 0V600M500 0V600M600 0V600M700 0V600M800 0V600M900 0V600M1000 0V600M1100 0V600M1200 0V600M1300 0V600M1400 0V600"/></g>
+<g font-family="Arial, Helvetica, sans-serif" fill="#181818">
+<text x="88" y="92" font-size="18" font-weight="700" letter-spacing="4">MAKE TIME FOR YOUR PEOPLE</text>
+<text x="80" y="262" font-size="158" font-weight="900" letter-spacing="-9">OneMore<tspan fill="#ff2b2b">.</tspan></text>
+<text x="88" y="350" font-size="48" font-weight="700" letter-spacing="-1">Less planning. More playing.</text>
+<text x="90" y="433" font-size="23" fill="#555">One account. Separate spaces. A time that works.</text>
+<text x="90" y="533" font-size="16" font-weight="700" letter-spacing="2">BUILT BY CHAOAN LI</text>
+</g>
+<g transform="translate(1090 262) rotate(-8)" stroke-linecap="round" stroke-linejoin="round">
+<path d="M-141-94C-77-161 82-158 139-61C208 53 92 154-32 141C-155 130-204-9-141-94Z" fill="#ff2b2b" stroke="#181818" stroke-width="5"/>
+<path d="M-47 50L-77 4C-88-15-71-29-58-16L-28 13L-28-63C-28-83-6-83-6-63L-6-14L0-89C2-108 23-104 23-86L22-15L33-73C37-92 58-87 54-68L43-7L56-42C63-61 82-50 76-33L65 15C61 61 45 80 10 83C-11 85-29 76-47 50Z" fill="#f8f6f1" stroke="#181818" stroke-width="5"/>
+<path d="M-104-139L-119-160M-61-157L-64-181M116 138L138 155" fill="none" stroke="#181818" stroke-width="5"/>
+</g></svg>

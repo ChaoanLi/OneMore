@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n'
 import type { GameTemplate, MyGame, RoleRequirement } from './types'
 
 export const GM_ROLE: RoleRequirement = { key: 'gm', label: 'KP/GM', min: 1 }
@@ -72,4 +73,14 @@ export function myGameFromCatalog(g: GameTemplate): MyGame {
 /** 用户的游戏列表；还没设置时用内置目录 */
 export function resolveMyGames(myGames: MyGame[] | undefined): MyGame[] {
   return myGames && myGames.length > 0 ? myGames : GAME_CATALOG.map(myGameFromCatalog)
+}
+
+/** Catalog labels may change language; explicitly renamed games remain user-authored content. */
+export function localizeBuiltinGame<T extends { name: string; gameKey?: string | null; key?: string; hint?: string }>(game: T, locale: Locale = 'zh-CN'): T {
+  const builtin = findGame(game.gameKey ?? game.key)
+  if (!builtin) return game
+  const defaultNames = [builtin.name, translate('en', builtin.name)]
+  const name = defaultNames.includes(game.name) ? translate(locale, builtin.name) : game.name
+  const hint = game.hint === builtin.hint || game.hint === translate('en', builtin.hint ?? '') ? builtin.hint && translate(locale, builtin.hint) : game.hint
+  return { ...game, name, ...(game.hint !== undefined ? { hint } : {}) }
 }

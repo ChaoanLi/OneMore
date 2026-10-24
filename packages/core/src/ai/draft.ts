@@ -1,5 +1,6 @@
+import { translate, type Locale } from '../i18n'
 import { z } from 'zod'
-import { CUSTOM_GAME_EMOJI, findGame } from '../games'
+import { CUSTOM_GAME_EMOJI, findGame, localizeBuiltinGame } from '../games'
 import { addMinutes, localToUtc, resolveWhen, suggestSlots, type TimeOfDay, type WhenKeyword } from '../time'
 import type { EventOptionInput } from '../schemas'
 
@@ -56,6 +57,7 @@ export type AiDraft = z.output<typeof aiDraftSchema>
 export interface DraftContext {
   now: Date
   timezone: string
+  locale?: Locale
 }
 
 export interface DraftSuggestion {
@@ -82,9 +84,9 @@ const WHEN_TEXT: Record<WhenKeyword, string> = {
   next_month_weekends: '这个月周末',
 }
 
-export function defaultTitle(optionNames: string[], when: WhenKeyword | null): string {
-  const games = optionNames.length ? optionNames.slice(0, 3).join(' / ') : '玩点什么'
-  const prefix = when ? `${WHEN_TEXT[when]}` : ''
+export function defaultTitle(optionNames: string[], when: WhenKeyword | null, locale: Locale = 'zh-CN'): string {
+  const games = optionNames.length ? optionNames.slice(0, 3).join(' / ') : translate(locale, '玩点什么')
+  const prefix = when ? translate(locale, WHEN_TEXT[when]) : ''
   return `${prefix}${prefix ? ' ' : ''}${games}`.slice(0, 40)
 }
 
@@ -105,7 +107,7 @@ export function expandDraft(draft: AiDraft, ctx: DraftContext): DraftSuggestion 
     if (!fixedSize && draft.headcount.max) maxPlayers = Math.max(minPlayers, draft.headcount.max)
     return {
       gameKey: game ? game.key : null,
-      name: game ? game.name : o.name,
+      name: game ? localizeBuiltinGame(game, ctx.locale).name : o.name,
       emoji: game ? game.emoji : CUSTOM_GAME_EMOJI,
       minPlayers,
       maxPlayers,
@@ -152,7 +154,7 @@ export function expandDraft(draft: AiDraft, ctx: DraftContext): DraftSuggestion 
   if (!draft.mode && !onlineByDefault) uncertain.add('mode')
 
   return {
-    title: draft.title?.trim() || defaultTitle(options.map((o) => o.name), draft.when),
+    title: draft.title?.trim() || defaultTitle(options.map((o) => o.name), draft.when, ctx.locale),
     options,
     slots,
     mode: draft.mode ?? 'online',

@@ -2,7 +2,8 @@ import Taro from '@tarojs/taro'
 import { useEffect, useReducer } from 'react'
 import { DEFAULT_TIMEZONE, isValidTimeZone, type AuthResponse, type MeResponse, type User, type SpaceSummary } from '@couju/core'
 import { requestContext } from './requestContext'
-import { ApiError, get, post, setApiToken } from './api'
+import { ApiError, get, post, patch, setApiToken } from './api'
+import { applyLocale, getLocale, setLocalePersistence, t } from './i18n'
 
 /**
  * 会话：本地保存访客令牌（couju.token）与用户资料缓存（couju.user）。
@@ -74,21 +75,32 @@ export function bootSession(): Promise<void> {
     if (cached) {
       try {
         state = { ...state, user: JSON.parse(cached) as User }
+        if (state.user?.locale) applyLocale(state.user.locale)
       } catch {
         // 缓存损坏时忽略
       }
     }
-    try {
-      const me = await get<MeResponse>('/api/me')
-      applySpaces(me.spaces, me.user)
-      setState({ ready: true, user: me.user, unread: 0 })
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
-        clearLocal()
-        setState({ ready: true, user: null, unread: 0 })
-      } else {
-        // 离线时先用缓存
-        setState({ ready: true })
+    const context = requestContext.capture()
+    while (requestContext.sameContent(context)) {
+      try {
+        const me = await get<MeResponse>('/api/me')
+        if (!requestContext.sameContent(context)) return
+        if (me.user.locale) applyLocale(me.user.locale)
+        applySpaces(me.spaces, me.user)
+        setState({ ready: true, user: me.user, unread: 0 })
+        return
+      } catch (e) {
+        // 仅语言变化可重试；身份或空间替换后不得恢复旧会话。
+        if (!requestContext.sameContent(context)) return
+        if (e instanceof ApiError && e.code === 'stale_context') continue
+        if (e instanceof ApiError && e.status === 401) {
+          clearLocal()
+          setState({ ready: true, user: null, unread: 0 })
+        } else {
+          // 离线时先用缓存
+          setState({ ready: true })
+        }
+        return
       }
     }
   })()
@@ -98,6 +110,7 @@ export function bootSession(): Promise<void> {
 function saveAuth(res: AuthResponse) {
   Taro.setStorageSync(TOKEN_KEY, res.token)
   setApiToken(res.token)
+  if (res.user.locale) applyLocale(res.user.locale)
   setState({ ready: true, user: res.user, unread: 0, spaces: [], activeSpace: null, revision: state.revision + 1 })
 }
 
@@ -108,7 +121,7 @@ function clearLocal() {
 }
 
 export async function signupGuest(nickname: string, timezone = DEFAULT_TIMEZONE): Promise<User> {
-  const res = await post<AuthResponse>('/api/auth/guest', { nickname, timezone })
+  const res = await post<AuthResponse>('/api/auth/guest', { nickname, timezone, locale: getLocale() })
   saveAuth(res)
   await refreshSpaces()
   return res.user
@@ -179,7 +192,7 @@ export async function refreshSpaces() {
 export async function selectSpace(id: string, url = '/pages/index/index') {
   if (!state.spaces.some((s) => s.id === id)) {
     await refreshSpaces()
-    if (!state.spaces.some((s) => s.id === id)) throw new ApiError(403, 'forbidden', '你还不是这个空间的成员')
+    if (!state.spaces.some((s) => s.id === id)) throw new ApiError(403, 'forbidden', t('你还不是这个空间的成员'))
   }
   requestContext.setSpace(id)
   setState({ activeSpace: id, unread: 0, revision: state.revision + 1, switching: true })
@@ -209,6 +222,12 @@ export async function requireUser(reason = '先告诉大家怎么称呼你'): Pr
     identityListeners.forEach((l) => l())
   })
 }
+
+setLocalePersistence(async (locale) => {
+  if (!state.user) return
+  const res = await patch<{ user: User }>('/api/me', { locale })
+  setUser(res.user)
+})
 
 export function useIdentityRequest() {
   const [, force] = useReducer((x: number) => x + 1, 0)

@@ -1,6 +1,7 @@
 import { createHash, randomInt } from 'node:crypto'
 import {
   DEFAULT_TIMEZONE,
+  translate, renderMessage, localizeBuiltinGame,
   emailInviteSchema,
   emailRequestSchema,
   emailToggleSchema,
@@ -81,12 +82,14 @@ export function requestEmail(ctx: Ctx, me: User, raw: unknown): EmailSettingsRes
     codeSentAt: [...recent, now.toISOString()],
   }
   ctx.store.saveUserEmail(next)
+  const locale = me.locale ?? 'zh-CN'
   const body = renderEmail({
-    heading: `你的验证码：${code}`,
-    lines: [`${me.nickname}，在「算我一个」里输入这 6 位数字，就能收到成团、差一个人之类的邮件提醒。`, '15 分钟内有效。不是你本人操作的话，忽略这封邮件就好。'],
-    footer: '这封邮件由「算我一个 · OneMore」自动发送。',
+    locale,
+    heading: translate(locale, '你的验证码：{0}', code),
+    lines: [translate(locale, '{0}，在「算我一个」里输入这 6 位数字，就能收到成团、差一个人之类的邮件提醒。', me.nickname), translate(locale, '15 分钟内有效。不是你本人操作的话，忽略这封邮件就好。')],
+    footer: translate(locale, '这封邮件由「算我一个 · OneMore」自动发送。'),
   })
-  mailer(ctx).enqueue({ to: email, subject: `【算我一个】验证码 ${code}`, ...body, kind: 'verify' }, { immediate: true })
+  mailer(ctx).enqueue({ to: email, subject: translate(locale, '【算我一个】验证码 {0}', code), ...body, kind: 'verify' }, { immediate: true })
   return settings(ctx, next, code)
 }
 
@@ -128,16 +131,20 @@ export function notificationEmail(ctx: Ctx, n: AppNotification) {
   const rec = ctx.store.getUserEmail(n.userId)
   if (!rec?.email || !rec.enabled || !ctx.store.getMembership(ctx.store.spaceId!,n.userId)?.emailEnabled || ctx.store.isSuppressed(rec.email)) return
   const user = ctx.store.getUser(n.userId)
+  const locale = user?.locale ?? 'zh-CN'
+  const title = n.titleMessage ? renderMessage(locale, n.titleMessage) : n.title
+  const content = n.bodyMessage ? renderMessage(locale, n.bodyMessage) : n.body
   const link = `${ctx.mailer.baseUrl}/#${n.link}`
   const body = renderEmail({
-    heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${n.title}`,
-    lines: n.body ? [n.body] : [],
-    cta: { text: '点开看看', url: link },
-    footer: `${user?.nickname ?? ''}，你在「算我一个」打开了邮件提醒。夜里（你那边 23 点到 8 点）不会发。`,
+    locale,
+    heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${title}`,
+    lines: content ? [content] : [],
+    cta: { text: translate(locale, '点开看看'), url: link },
+    footer: translate(locale, '{0}，你在「算我一个」打开了邮件提醒。夜里（你那边 23 点到 8 点）不会发。', user?.nickname ?? ''),
     unsubUrl: unsubUrl(ctx, rec.email),
   })
   ctx.mailer.enqueue(
-    { to: rec.email, subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${n.title}`, ...body, kind: n.kind, headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, rec.email)}>` } },
+    { to: rec.email, subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${title}`, ...body, kind: n.kind, headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, rec.email)}>` } },
     { recipientTz: user?.timezone ?? DEFAULT_TIMEZONE, spaceId: ctx.store.spaceId, recipientId: n.userId, objectCode: /[?&]code=([^&]+)/.exec(n.link)?.[1], interestId: n.objectId },
   )
 }
@@ -178,28 +185,32 @@ export function inviteByEmail(ctx: Ctx, me: User, code: string, raw: unknown): E
       skipped.push({ email, reason: 'rate_limited' })
       continue
     }
-    // 不知道对方在哪个时区：按默认（北京时间）写，并附上组局人的时间
+    const recipient = ctx.store.getUser(recipientId)
+    const locale = recipient?.locale ?? 'zh-CN'
+    const recipientTz = recipient?.timezone ?? DEFAULT_TIMEZONE
+    // Display and quiet hours both use the actual recipient's preferences.
     const when = first
-      ? `${slotOneLine(first, DEFAULT_TIMEZONE, now)}（${zoneLabel(DEFAULT_TIMEZONE)}）${event.slots.length > 1 ? ` 等 ${event.slots.length} 个时间` : ''}`
+      ? `${slotOneLine(first, recipientTz, now, locale)} (${zoneLabel(recipientTz, locale)})${event.slots.length > 1 ? translate(locale, ' 等 {0} 个时间', event.slots.length) : ''}`
       : ''
-    const hostWhen = first && event.hostTimezone !== DEFAULT_TIMEZONE ? `组局人那边是 ${slotInOtherZone(first, DEFAULT_TIMEZONE, event.hostTimezone)}` : ''
-    const games = event.options.map((o) => `${o.emoji} ${o.name}`).join(' / ')
+    const hostWhen = first && event.hostTimezone !== recipientTz ? translate(locale, '组局人那边是 {0}', slotInOtherZone(first, recipientTz, event.hostTimezone, locale)) : ''
+    const games = event.options.map((o) => `${o.emoji} ${localizeBuiltinGame(o, locale).name}`).join(' / ')
     const body = renderEmail({
-      heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${me.nickname} 约你：${event.title}`,
-      lines: [games, when, hostWhen, input.message ? `“${input.message}”` : '', '登录当前空间后即可报名，有空就来。'].filter(Boolean),
-      cta: { text: '看看能不能来', url: link },
-      footer: `这封邮件是 ${me.nickname} 通过「算我一个」发给你的。`,
+      locale,
+      heading: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${translate(locale, '{0} 约你：{1}', me.nickname, event.title)}`,
+      lines: [games, when, hostWhen, input.message ? `“${input.message}”` : '', translate(locale, '登录当前空间后即可报名，有空就来。')].filter(Boolean),
+      cta: { text: translate(locale, '看看能不能来'), url: link },
+      footer: translate(locale, '这封邮件是 {0} 通过「算我一个」发给你的。', me.nickname),
       unsubUrl: unsubUrl(ctx, email),
     })
     m.enqueue(
       {
         to: email,
-        subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${me.nickname} 约你：${event.title}`,
+        subject: `[${ctx.store.getSpace(ctx.store.spaceId!)!.name}] ${translate(locale, '{0} 约你：{1}', me.nickname, event.title)}`,
         ...body,
         kind: 'email_invite',
         headers: { 'List-Unsubscribe': `<${unsubUrl(ctx, email)}>`, ...(hostEmail ? { 'Reply-To': hostEmail } : {}) },
       },
-      { recipientTz: DEFAULT_TIMEZONE, spaceId: ctx.store.spaceId, recipientId, objectCode: event.code },
+      { recipientTz, spaceId: ctx.store.spaceId, recipientId, objectCode: event.code },
     )
     ctx.store.logEmailInvite(me.id, email, event.id, now.toISOString())
     sent++

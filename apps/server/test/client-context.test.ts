@@ -36,4 +36,13 @@ describe('客户端空间切换', () => {
     expect(takePrefill()).toEqual(draft)
     expect(takePrefill()).toBe(null)
   })
+  it('只切换语言保留草稿的内容和所属空间', () => {
+    requestContext.setIdentity('draft-owner')
+    requestContext.setSpace('same-space')
+    requestContext.setLocale('zh-CN')
+    const draft = { source: 'interest', interest: { id: '中文用户内容' } } as any
+    setPrefill(draft)
+    requestContext.setLocale('en')
+    expect(takePrefill()).toEqual(draft)
+  })
 })

@@ -7,14 +7,13 @@ export const HANDLE_RE = /^[a-z0-9_]{3,20}$/
 
 export const timezoneSchema = z.string().refine(isValidTimeZone, { message: '无效的时区' })
 export const nicknameSchema = z.string().trim().min(1, '请填写昵称').max(20, '昵称最多 20 个字')
-export const handleSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .regex(HANDLE_RE, 'ID 需为 3–20 位小写字母、数字或下划线')
+export const handleSchema = z.string().trim().toLowerCase().regex(HANDLE_RE, 'ID 需为 3–20 位小写字母、数字或下划线')
 const isoSchema = z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: '无效的时间' })
 
+export const localeSchema = z.enum(['zh-CN', 'en'])
+
 export const guestSignupSchema = z.object({
+  locale: localeSchema.optional(),
   nickname: nicknameSchema,
   timezone: timezoneSchema,
   avatar: z.string().max(8).optional(),
@@ -40,12 +39,16 @@ export const myGameSchema = z
   .refine((g) => g.minPlayers <= g.maxPlayers, { message: '最少人数不能大于最多人数', path: ['minPlayers'] })
 
 export const updateMeSchema = z.object({
+  locale: localeSchema.optional(),
   nickname: nicknameSchema.optional(),
   handle: handleSchema.optional(),
   avatar: z.string().min(1).max(8).optional(),
   timezone: timezoneSchema.optional(),
   games: z.array(z.string().max(30)).max(20).optional(),
-  roles: z.array(z.enum(['gm'])).max(5).optional(),
+  roles: z
+    .array(z.enum(['gm']))
+    .max(5)
+    .optional(),
   myGames: z.array(myGameSchema).max(30, '最多 30 个游戏').optional(),
 })
 export type UpdateMeInput = z.infer<typeof updateMeSchema>
@@ -148,6 +151,7 @@ export const createInterestSchema = z.object({
   emoji: z.string().max(8).optional(),
   minPlayers: z.number().int().min(2).max(50).optional(),
   whenHint: z.string().trim().max(30).default(''),
+  whenPreset: z.enum(['tonight', 'this_weekend', 'weekday_evenings', 'next_week', 'anytime']).optional(),
   note: z.string().trim().max(100).default(''),
   audience: interestAudienceSchema.default({ kind: 'favorites' }),
   ttlDays: z.union([z.literal(1), z.literal(3), z.literal(7)]).default(3),
@@ -156,7 +160,12 @@ export type CreateInterestInput = z.input<typeof createInterestSchema>
 
 export const emailSchema = z.string().trim().toLowerCase().max(254).email('邮箱格式不对')
 export const emailRequestSchema = z.object({ email: emailSchema })
-export const emailVerifySchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, '验证码是 6 位数字') })
+export const emailVerifySchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, '验证码是 6 位数字'),
+})
 export const emailToggleSchema = z.object({ enabled: z.boolean() })
 export const emailInviteSchema = z.object({
   emails: z.array(emailSchema).min(1, '至少填一个邮箱').max(10, '一次最多 10 个邮箱'),

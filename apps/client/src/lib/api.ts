@@ -36,7 +36,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
     path.endsWith('/status') ||
     path === '/api/games'
   if (!isGlobal && (!snapshot.spaceId || (routeSpace && routeSpace !== snapshot.spaceId)))
-    throw new ApiError(0, 'stale_context', '请先选择或加入此空间')
+    throw new ApiError(0, 'stale_context', snapshot.locale === 'en' ? 'Choose or join this space first.' : '请先选择或加入此空间')
   let res: Taro.request.SuccessCallbackResult<any>
   try {
     res = await Taro.request({
@@ -45,6 +45,7 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
       data: body as any,
       header: {
         'Content-Type': 'application/json',
+        'Accept-Language': snapshot.locale,
         ...(snapshot.token ? { Authorization: `Bearer ${snapshot.token}` } : {}),
         ...(!isGlobal && snapshot.spaceId ? { 'X-Space-Id': snapshot.spaceId } : {}),
       },
@@ -52,12 +53,19 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
       timeout: 20000,
     })
   } catch {
-    throw new ApiError(0, 'network', '网络好像不太稳定，稍后再试')
+    if (!requestContext.isCurrent(snapshot))
+      throw new ApiError(0, 'stale_context', snapshot.locale === 'en' ? 'Your display context has changed.' : '显示内容已切换')
+    throw new ApiError(0, 'network', snapshot.locale === 'en' ? 'Connection trouble. Please try again.' : '网络好像不太稳定，稍后再试')
   }
-  if (!requestContext.isCurrent(snapshot)) throw new ApiError(0, 'stale_context', '空间已切换')
+  if (!requestContext.isCurrent(snapshot))
+    throw new ApiError(0, 'stale_context', snapshot.locale === 'en' ? 'Your display context has changed.' : '显示内容已切换')
   if (res.statusCode >= 400) {
     const data = (res.data ?? {}) as { error?: string; message?: string }
-    throw new ApiError(res.statusCode, data.error ?? 'error', data.message ?? '出了点问题')
+    throw new ApiError(
+      res.statusCode,
+      data.error ?? 'error',
+      data.message ?? (snapshot.locale === 'en' ? 'Something went wrong. Please try again.' : '出了点问题'),
+    )
   }
   return res.data as T
 }

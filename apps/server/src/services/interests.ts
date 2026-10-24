@@ -1,3 +1,4 @@
+import { message, translate, localizeBuiltinGame } from '@couju/core'
 import {
   CUSTOM_GAME_EMOJI,
   createInterestSchema,
@@ -10,6 +11,7 @@ import {
   isInterestExpired,
   type Interest,
   type InterestView,
+  type InterestWhenPreset,
   type User,
   type UserId,
 } from '@couju/core'
@@ -24,9 +26,22 @@ import { badRequest, forbidden, newId, notFound, toPublic } from '../util'
  * - 到期自动失效；人够了任何参与者都可以一键转为正式活动。
  */
 
+const WHEN_PRESET_LABELS: Record<InterestWhenPreset, string> = {
+  tonight: '今晚',
+  this_weekend: '这周末',
+  weekday_evenings: '工作日晚上',
+  next_week: '下周',
+  anytime: '随时',
+}
+
 function visibilityCtx(ctx: Ctx, interest: Interest) {
   const ownerFriendIds = new Set(ctx.store.friendIds(interest.ownerId))
-  const ownerFavoriteIds = new Set(ctx.store.getPrefs(interest.ownerId).filter((p) => p.favorite).map((p) => p.friendId))
+  const ownerFavoriteIds = new Set(
+    ctx.store
+      .getPrefs(interest.ownerId)
+      .filter((p) => p.favorite)
+      .map((p) => p.friendId),
+  )
   const circleMemberIds = new Set<UserId>()
   if (interest.audience.kind === 'circles') {
     for (const cid of interest.audience.circleIds) {
@@ -59,10 +74,10 @@ function toView(ctx: Ctx, interest: Interest, me: User): InterestView {
     id: interest.id,
     owner: toPublic(owner),
     gameKey: interest.gameKey,
-    name: interest.name,
+    name: localizeBuiltinGame(interest, ctx.locale).name,
     emoji: interest.emoji,
     minPlayers: interest.minPlayers,
-    whenHint: interest.whenHint,
+    whenHint: interest.whenPreset ? translate(ctx.locale, WHEN_PRESET_LABELS[interest.whenPreset]) : interest.whenHint,
     note: interest.note,
     status: interest.status,
     convertedEventCode: converted?.code ?? null,
@@ -78,9 +93,10 @@ function toView(ctx: Ctx, interest: Interest, me: User): InterestView {
 
 export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
   const input = createInterestSchema.parse(raw)
-  if(input.audience.kind==='circles' && input.audience.circleIds.some(id=>ctx.store.getCircle(id)?.ownerId!==me.id)) throw badRequest('只能选择当前空间内自己的圈子')
+  if (input.audience.kind === 'circles' && input.audience.circleIds.some((id) => ctx.store.getCircle(id)?.ownerId !== me.id))
+    throw badRequest('只能选择当前空间内自己的圈子')
   const game = findGame(input.gameKey)
-  const name = game?.name ?? input.name
+  const name = input.name || game?.name
   if (!name) throw badRequest('想玩什么？')
   const now = ctx.now()
   const active = ctx.store.listInterestsByOwners([me.id]).filter((i) => i.status === 'active' && !isInterestExpired(i, now))
@@ -94,6 +110,7 @@ export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
     emoji: game?.emoji ?? input.emoji ?? CUSTOM_GAME_EMOJI,
     minPlayers: input.minPlayers ?? game?.minPlayers ?? 2,
     whenHint: input.whenHint,
+    ...(input.whenPreset ? { whenPreset: input.whenPreset } : {}),
     note: input.note,
     audience: input.audience,
     joiners: [],
@@ -104,11 +121,13 @@ export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
   }
   return ctx.store.tx(() => {
     ctx.store.saveInterest(interest)
+    const whenHint = interest.whenPreset ? message(WHEN_PRESET_LABELS[interest.whenPreset]) : interest.whenHint
     for (const uid of audienceIds(ctx, interest)) {
       notify(ctx, uid, {
-        kind: 'interest_new', objectId: interest.id,
-        title: `${me.nickname} 举手想玩 ${interest.emoji} ${interest.name}`,
-        body: `${interest.whenHint ? `${interest.whenHint}，` : ''}想玩就 +1，不想玩当没看见`,
+        kind: 'interest_new',
+        objectId: interest.id,
+        title: message('{0} 举手想玩 {1} {2}', me.nickname, interest.emoji, message('$game', interest.gameKey, interest.name)),
+        body: message('{0}想玩就 +1，不想玩当没看见', whenHint ? message('{0}，', whenHint) : ''),
         link: '/pages/index/index',
         dedupeKey: `interest:${me.id}:${interest.gameKey ?? interest.name}`,
       })
@@ -121,7 +140,8 @@ export function createInterest(ctx: Ctx, me: User, raw: unknown): InterestView {
 export function listInterests(ctx: Ctx, me: User): { mine: InterestView[]; friends: InterestView[] } {
   const friendIds = ctx.store.friendIds(me.id)
   const candidates = ctx.store.listInterestsByOwners([me.id, ...friendIds]).map((i) => expireIfNeeded(ctx, i))
-  const recent = (i: Interest) => i.status === 'active' || (i.status === 'converted' && Date.parse(i.createdAt) > ctx.now().getTime() - 7 * 24 * 3600_000)
+  const recent = (i: Interest) =>
+    i.status === 'active' || (i.status === 'converted' && Date.parse(i.createdAt) > ctx.now().getTime() - 7 * 24 * 3600_000)
   const mine = candidates
     .filter((i) => recent(i) && (i.ownerId === me.id || i.joiners.some((j) => j.userId === me.id)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -153,9 +173,10 @@ export function joinInterest(ctx: Ctx, me: User, id: string): InterestView {
     if (!wasReady && interestReady(next)) {
       for (const uid of interestParticipants(next)) {
         notify(ctx, uid, {
-          kind: 'interest_ready', objectId: next.id,
-          title: `${next.emoji} ${next.name} 人齐了（${interestHeadcount(next)} 个）`,
-          body: '谁有空谁来定个时间，就能开了',
+          kind: 'interest_ready',
+          objectId: next.id,
+          title: message('{0} {1} 人齐了（{2} 个）', next.emoji, message('$game', next.gameKey, next.name), interestHeadcount(next)),
+          body: message('谁有空谁来定个时间，就能开了'),
           link: '/pages/index/index',
           dedupeKey: `interest_ready:${next.id}`,
         })

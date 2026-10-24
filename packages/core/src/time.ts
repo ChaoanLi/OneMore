@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n'
 import { DateTime, IANAZone } from 'luxon'
 import type { TimeSlot } from './types'
 
@@ -9,6 +10,13 @@ import type { TimeSlot } from './types'
  */
 
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const
+
+const EN_ZONE_NAMES: Record<string, string> = {
+  'Asia/Shanghai': 'Beijing time', 'Asia/Chongqing': 'Beijing time', 'Asia/Hong_Kong': 'Hong Kong time', 'Asia/Taipei': 'Taipei time', 'Asia/Tokyo': 'Tokyo time',
+  'America/New_York': 'US Eastern time', 'America/Chicago': 'US Central time', 'America/Denver': 'US Mountain time', 'America/Phoenix': 'Phoenix time', 'America/Los_Angeles': 'US Pacific time',
+  'Europe/London': 'London time', 'Europe/Berlin': 'Berlin time', 'Australia/Sydney': 'Sydney time',
+}
+export function weekdayNames(locale: Locale = 'zh-CN'): readonly string[] { return locale === 'en' ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] : WEEKDAYS }
 
 const ZONE_NAMES: Record<string, string> = {
   'Asia/Shanghai': '北京时间',
@@ -35,7 +43,8 @@ export function isValidTimeZone(tz: string): boolean {
   return typeof tz === 'string' && tz.length > 0 && IANAZone.isValidZone(tz)
 }
 
-export function zoneLabel(tz: string): string {
+export function zoneLabel(tz: string, locale: Locale = 'zh-CN'): string {
+  if (locale === 'en') return EN_ZONE_NAMES[tz] ?? `${(tz.split('/').pop() ?? tz).replace(/_/g, ' ')} time`
   if (ZONE_NAMES[tz]) return ZONE_NAMES[tz]
   const city = tz.split('/').pop() ?? tz
   return `${city.replace(/_/g, ' ')}时间`
@@ -78,19 +87,19 @@ export interface SlotDisplay {
   isPast: boolean
 }
 
-export function formatSlot(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, tz: string, now: Date = new Date()): SlotDisplay {
+export function formatSlot(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, tz: string, now: Date = new Date(), locale: Locale = 'zh-CN'): SlotDisplay {
   const start = DateTime.fromISO(slot.startUtc, { zone: 'utc' }).setZone(tz)
   const end = slot.endUtc ? DateTime.fromISO(slot.endUtc, { zone: 'utc' }).setZone(tz) : null
   const today = DateTime.fromJSDate(now).setZone(tz).startOf('day')
   const diffDays = Math.round(start.startOf('day').diff(today, 'days').days)
-  const relativeLabel = diffDays === 0 ? '今天' : diffDays === 1 ? '明天' : diffDays === 2 ? '后天' : ''
+  const relativeSource = diffDays === 0 ? '今天' : diffDays === 1 ? '明天' : diffDays === 2 ? '后天' : ''
   const endsNextDay = !!end && !end.hasSame(start, 'day')
   return {
-    dateLabel: `${start.toFormat('M/d')} ${WEEKDAYS[start.weekday - 1]}`,
-    relativeLabel,
-    timeLabel: end ? `${start.toFormat('HH:mm')}–${end.toFormat('HH:mm')}${endsNextDay ? '(次日)' : ''}` : start.toFormat('HH:mm'),
+    dateLabel: `${start.toFormat('M/d')} ${weekdayNames(locale)[start.weekday - 1]}`,
+    relativeLabel: translate(locale, relativeSource),
+    timeLabel: end ? `${start.toFormat('HH:mm')}–${end.toFormat('HH:mm')}${endsNextDay ? locale === 'en' ? ' (next day)' : '(次日)' : ''}` : start.toFormat('HH:mm'),
     endsNextDay,
-    zoneLabel: zoneLabel(tz),
+    zoneLabel: zoneLabel(tz, locale),
     // 用英文区域取缩写（CDT/CST），中文环境下 Intl 只会给出 GMT-5
     zoneAbbr: start.setLocale('en-US').offsetNameShort ?? start.toFormat('ZZ'),
     isPast: start.toMillis() < now.getTime(),
@@ -98,17 +107,17 @@ export function formatSlot(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, tz: stri
 }
 
 /** 一行文字描述，例如 "明天 10/24 周六 20:00–22:00" */
-export function slotOneLine(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, tz: string, now: Date = new Date()): string {
-  const d = formatSlot(slot, tz, now)
+export function slotOneLine(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, tz: string, now: Date = new Date(), locale: Locale = 'zh-CN'): string {
+  const d = formatSlot(slot, tz, now, locale)
   return [d.relativeLabel, d.dateLabel, d.timeLabel].filter(Boolean).join(' ')
 }
 
 /** 另一个时区的对照，例如 "北京时间 10/25 周日 09:00 (+1天)" */
-export function slotInOtherZone(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, viewerTz: string, otherTz: string): string {
+export function slotInOtherZone(slot: Pick<TimeSlot, 'startUtc' | 'endUtc'>, viewerTz: string, otherTz: string, locale: Locale = 'zh-CN'): string {
   const start = DateTime.fromISO(slot.startUtc, { zone: 'utc' }).setZone(otherTz)
   const shift = dayShift(slot.startUtc, viewerTz, otherTz)
-  const shiftLabel = shift === 0 ? '' : ` (${shift > 0 ? '+' : ''}${shift}天)`
-  return `${zoneLabel(otherTz)} ${start.toFormat('M/d')} ${WEEKDAYS[start.weekday - 1]} ${start.toFormat('HH:mm')}${shiftLabel}`
+  const shiftLabel = shift === 0 ? '' : ` (${shift > 0 ? '+' : ''}${shift}${locale === 'en' ? Math.abs(shift) === 1 ? ' day' : ' days' : '天'})`
+  return `${zoneLabel(otherTz, locale)} ${start.toFormat('M/d')} ${weekdayNames(locale)[start.weekday - 1]} ${start.toFormat('HH:mm')}${shiftLabel}`
 }
 
 export function addMinutes(utc: string, minutes: number): string {
@@ -280,7 +289,7 @@ export interface QuickPreset {
 }
 
 /** 创建活动时的快捷时段：今晚、明晚、周五晚、周六下午/晚上、周日下午/晚上（取最近一次）。 */
-export function quickPresets(now: Date, tz: string, durationMin: number): QuickPreset[] {
+export function quickPresets(now: Date, tz: string, durationMin: number, locale: Locale = 'zh-CN'): QuickPreset[] {
   const today = DateTime.fromJSDate(now).setZone(tz).startOf('day')
   const candidates: { key: string; label: string; day: DateTime; time: string }[] = []
   candidates.push({ key: 'tonight', label: '今晚 20:00', day: today, time: '20:00' })
@@ -307,7 +316,7 @@ export function quickPresets(now: Date, tz: string, durationMin: number): QuickP
     if (seen.has(startUtc)) continue
     seen.add(startUtc)
     const d = DateTime.fromISO(startUtc, { zone: 'utc' }).setZone(tz)
-    const label = c.key === 'tonight' || c.key === 'tomorrow' ? c.label : `${c.label} ${d.toFormat('M/d')}`
+    const label = c.key === 'tonight' || c.key === 'tomorrow' ? translate(locale, c.label) : `${translate(locale, c.label)} ${d.toFormat('M/d')}`
     out.push({ key: c.key, label, startUtc, endUtc: addMinutes(startUtc, durationMin) })
   }
   return out

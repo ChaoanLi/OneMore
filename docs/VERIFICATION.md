@@ -1,8 +1,38 @@
-# 独立空间验证记录
+# Verification / 验证记录
+
+Date: 2026-10-23. The bilingual showcase extends the independent-space baseline below.
+
+## Current bilingual build
+
+- `npm test`: **61 core + 83 server/client = 144 passing tests**, including request-language concurrency, recipient email/account-locale ICS, UTC/DST calculations, notification metadata, historical text, validated scheduling presets, revoked queued permissions, locale bootstrap races, stale rejected responses and real React cached-page lifecycle behavior.
+- `npm run typecheck`: core, server and client pass. React DOM types were added for the real hook regression test; JSDOM is an explicit development dependency, reusing the installed version.
+- `npm run build`: production H5 succeeds. Two webpack size warnings remain; combined entry is approximately **598 KiB**. This is a size limitation, not a claim of measured network performance.
+- Root integration regressions: locale-only bootstrap invalidation retries without restoring a replaced account; outdated network failures become `stale_context`. Display generations and content generations remain separate.
+- Fresh scoped reviews: core/server approved; client review identified and then approved fixes for sheet refresh, structured interest presets, button contrast and hidden-page navigation. Final whole-branch review is recorded below after completion.
+
+## Browser checks with isolated synthetic data
+
+The browser used an independent temporary SQLite database, five invented accounts and two spaces. Existing personal databases were not opened or modified.
+
+- English and Chinese home, event and space screens; both language selectors remain reachable. Actual H5 screenshots in `docs/assets` show synthetic data and contain no invitation/recovery/feed tokens.
+- 375px responsive layout: page width and document scroll width both 375; checked readable controls and English wrapping. Corrected Taro's `disabled="false"` selector interaction; inactive language text computes to dark gray, active to white, with no wrapping.
+- A linked event in space A → management → open B now stays in B and shows only B's event. Switching language preserves B. Returning to A shows A's separate events. Cached hidden pages can no longer select their old linked space.
+- English demo request `Riichi mahjong tomorrow evening with 4 players` produces an editable draft. Chicago 20:00 and Beijing 09:00 the following day remain identical across language changes. No event or invitation is created by generating the draft.
+- Mixed-language title and note entered in the draft remain verbatim after English→Chinese. Candidate times and switches remain selected. Email settings preserve typed input while the open sheet changes language. Account time zone remains US Central.
+- Six real app screenshots (English/Chinese home, details and spaces) form the README gallery. The banner is a separate original SVG.
+
+## External services and release limits
+
+- No production DeepSeek request or real SMTP delivery verified. Default AI is a labelled keyword demo; email is a logged demo transport.
+- No public domain deployment, mainland China/US reachability measurements, WeChat device validation, or third-party calendar polling measurement.
+- Repository preparation remains private pending the user's explicit public-visibility decision. License is the unmodified official PolyForm Noncommercial 1.0.0; exact-text comparison passed. Lucide ISC and Feather MIT notices are retained separately.
+- Credential-pattern and tracked-file/history checks are targeted checks, not a guarantee that every possible secret format is detectable. Databases, actual `.env`, private cloud notes, keys and temporary fixtures remain excluded.
+
+# 先前的独立空间验证（基线）
 
 日期：2026-10-23。
 
-源码已上传 [ChaoanLi/OneMore](https://github.com/ChaoanLi/OneMore)，可见性为 Private；main 与本地提交一致。
+该阶段源码已上传私有仓库，以下是当时的验证记录。
 
 - `npm test`：核心规则 53 项、服务端与客户端边界 48 项，共 101 项通过。
 - `npm run typecheck`：core、server、client 全部通过。

@@ -1,3 +1,4 @@
+import { message, renderMessage, translate, type Locale, type Message, localizeBuiltinGame } from '@couju/core'
 import {
   addSlotsSchema,
   cancelSchema,
@@ -66,7 +67,7 @@ function actorRole(event: GameEvent, me: User): 'host' | 'participant' {
 
 function ensure(event: GameEvent, action: EventAction, me: User) {
   const r = canPerform(event.status, action, actorRole(event, me))
-  if (!r.ok) throw r.reason.includes('组局的人') ? forbidden(r.reason) : badRequest(r.reason, 'invalid_state')
+  if (!r.ok) throw r.reason.includes('组局的人') ? forbidden(r.reason) : badRequest(message('这局{0}，现在不能这么做', message(statusText(event.status))), 'invalid_state')
 }
 
 function canView(ctx: Ctx, event: GameEvent, viewer: User | undefined): boolean {
@@ -94,9 +95,9 @@ function eventLink(event: GameEvent) {
 }
 
 /** 按接收者自己的时区描述时段 */
-function slotTextFor(ctx: Ctx, userId: UserId, slot: TimeSlot): string {
+function slotTextFor(ctx: Ctx, userId: UserId, slot: TimeSlot): Message {
   const u = ctx.store.getUser(userId)
-  return slotOneLine(slot, u?.timezone ?? DEFAULT_TIMEZONE, ctx.now())
+  return message('$slot', slot.startUtc, slot.endUtc, u?.timezone ?? DEFAULT_TIMEZONE, ctx.now().toISOString())
 }
 
 function resolveInvitees(ctx: Ctx, host: User, userIds: UserId[], circleIds: string[]): UserId[] {
@@ -125,8 +126,8 @@ function addInvitations(ctx: Ctx, event: GameEvent, host: User, ids: UserId[]): 
     const first = event.slots.find((s) => Date.parse(s.startUtc) > ctx.now().getTime())
     notify(ctx, uid, {
       kind: 'event_invite',
-      title: `${host.nickname} 约你：${event.title}`,
-      body: first ? `${slotTextFor(ctx, uid, first)}${event.slots.length > 1 ? ` 等 ${event.slots.length} 个时间` : ''}，有空就来，没空不用回` : '',
+      title: message("{0} 约你：{1}", host.nickname, event.title),
+      body: first ? message("{0}{1}，有空就来，没空不用回", slotTextFor(ctx, uid, first), event.slots.length > 1 ? message(" 等 {0} 个时间", event.slots.length) : '') : '',
       link: eventLink(event),
       dedupeKey: `invite:${event.id}`,
     })
@@ -134,14 +135,14 @@ function addInvitations(ctx: Ctx, event: GameEvent, host: User, ids: UserId[]): 
   return fresh
 }
 
-function toSlotView(slot: TimeSlot, viewerTz: string, hostTz: string, now: Date): SlotView {
-  const d = formatSlot(slot, viewerTz, now)
+function toSlotView(slot: TimeSlot, viewerTz: string, hostTz: string, now: Date, locale: Locale = 'zh-CN'): SlotView {
+  const d = formatSlot(slot, viewerTz, now, locale)
   return {
     ...slot,
     ...d,
-    line: slotOneLine(slot, viewerTz, now),
+    line: slotOneLine(slot, viewerTz, now, locale),
     localDate: utcToLocal(slot.startUtc, viewerTz).slice(0, 10),
-    hostLine: viewerTz === hostTz ? null : slotInOtherZone(slot, viewerTz, hostTz),
+    hostLine: viewerTz === hostTz ? null : slotInOtherZone(slot, viewerTz, hostTz, locale),
   }
 }
 
@@ -160,7 +161,7 @@ export function getEventView(ctx: Ctx, code: string, viewer: User | undefined, v
 
   if (!allowed) {
     return {
-      event: { ...rest, note: '', location: '', final: null, slots: [], statusText: statusText(event.status) },
+      event: { ...rest, note: '', location: '', final: null, options: rest.options.map(o => localizeBuiltinGame(o, ctx.locale)), slots: [], statusText: statusText(event.status, ctx.locale) },
       host: toPublic(host),
       viewer: { role, timezone: viewerTz, invited: false, canRespond: false, response: null, inRoster: false, inWaitlist: false },
       restricted: true,
@@ -221,8 +222,10 @@ export function getEventView(ctx: Ctx, code: string, viewer: User | undefined, v
   return {
     event: {
       ...rest,
-      slots: slots.map((s) => toSlotView(s, viewerTz, event.hostTimezone, now)),
-      statusText: statusText(event.status),
+      cancelReason: event.cancelReasonMessage ? renderMessage(ctx.locale ?? 'zh-CN', event.cancelReasonMessage) : event.cancelReason,
+      options: rest.options.map(o => localizeBuiltinGame(o, ctx.locale)),
+      slots: slots.map((s) => toSlotView(s, viewerTz, event.hostTimezone, now, ctx.locale)),
+      statusText: statusText(event.status, ctx.locale),
     },
     host: toPublic(host),
     viewer: {
@@ -260,19 +263,19 @@ export function listMyEvents(ctx: Ctx, me: User): { active: EventCard[]; past: E
       const slot = e.slots.find((s) => s.id === e.final!.slotId)
       const option = e.options.find((o) => o.id === e.final!.optionId)
       if (slot) {
-        whenText = slotOneLine(slot, me.timezone, now)
+        whenText = slotOneLine(slot, me.timezone, now, ctx.locale)
         nextStartUtc = slot.startUtc
       }
-      if (option) progress = `${option.emoji} ${option.name} · ${e.final.rosterIds.length}/${option.maxPlayers} 人`
+      if (option) progress = translate(ctx.locale, '{0} {1} · {2}/{3} 人', option.emoji, localizeBuiltinGame(option, ctx.locale).name, e.final.rosterIds.length, option.maxPlayers)
     } else {
       const first = futureSlots[0] ?? e.slots[0]
       if (first) {
-        whenText = slotOneLine(first, me.timezone, now) + (e.slots.length > 1 ? ` 等 ${e.slots.length} 个时间` : '')
+        whenText = slotOneLine(first, me.timezone, now, ctx.locale) + (e.slots.length > 1 ? translate(ctx.locale, ' 等 {0} 个时间', e.slots.length) : '')
         nextStartUtc = futureSlots[0]?.startUtc ?? null
       }
       if (e.status === 'open') {
         const best = evaluateEvent(e, responses, now).best
-        progress = best ? describeProgress(best) : '没有可选的时间了'
+        progress = best ? describeProgress(best, ctx.locale) : translate(ctx.locale, '没有可选的时间了')
       }
     }
     const isHost = e.hostId === me.id
@@ -280,10 +283,10 @@ export function listMyEvents(ctx: Ctx, me: User): { active: EventCard[]; past: E
       code: e.code,
       title: e.title,
       status: e.status,
-      statusText: statusText(e.status),
+      statusText: statusText(e.status, ctx.locale),
       isHost,
       host: toPublic(host),
-      options: e.options.map((o) => ({ emoji: o.emoji, name: o.name })),
+      options: e.options.map((o) => ({ emoji: o.emoji, name: localizeBuiltinGame(o, ctx.locale).name })),
       whenText,
       progress,
       myIntent: mine?.intent ?? null,
@@ -340,7 +343,7 @@ export function createEvent(ctx: Ctx, me: User, raw: unknown): GameEvent {
       id: newId('e'),
       code,
       hostId: me.id,
-      title: input.title || defaultTitle(options.map((o) => o.name), null),
+      title: input.title || defaultTitle(options.map((o) => localizeBuiltinGame(o, ctx.locale).name), null, ctx.locale),
       note: input.note,
       mode: input.mode,
       location: input.location,
@@ -421,11 +424,11 @@ function syncFinal(ctx: Ctx, event: GameEvent, resp: EventResponse) {
       const responses = ctx.store.listResponses(event.id)
       const check = checkRoster(option, final.rosterIds, responses)
       if (!check.ok) {
-        const who = ctx.store.getUser(uid)?.nickname ?? '有人'
+        const who = ctx.store.getUser(uid)?.nickname ?? message('有人')
         notify(ctx, event.hostId, {
           kind: 'event_short',
-          title: `「${event.title}」${who} 临时有事`,
-          body: final.waitlistIds.length > 0 ? `还差 ${check.stillNeed} 个，候补里有 ${final.waitlistIds.length} 人可以补上` : `还差 ${check.stillNeed} 个，可以再叫几个人，或者重新开放`,
+          title: message("「{0}」{1} 临时有事", event.title, who),
+          body: final.waitlistIds.length > 0 ? message("还差 {0} 个，候补里有 {1} 人可以补上", check.stillNeed, final.waitlistIds.length) : message("还差 {0} 个，可以再叫几个人，或者重新开放", check.stillNeed),
           link: eventLink(event),
           dedupeKey: `short:${event.id}:${uid}`,
         })
@@ -480,8 +483,8 @@ function applyResponse(ctx: Ctx, me: User, event: GameEvent, input: ReturnType<t
       const slot = slotOf(event, after.best.slotId)
       notify(ctx, event.hostId, {
         kind: 'event_ready',
-        title: `「${event.title}」人齐了`,
-        body: `${slotTextFor(ctx, event.hostId, slot)} · ${option.emoji} ${option.name} ${after.best.roster.length} 人，点一下就定了`,
+        title: message("「{0}」人齐了", event.title),
+        body: message("{0} · {1} {2} {3} 人，点一下就定了", slotTextFor(ctx, event.hostId, slot), option.emoji, message('$game', option.gameKey, option.name), after.best.roster.length),
         link: eventLink(event),
         dedupeKey: `ready:${event.id}:${after.best.optionId}:${after.best.slotId}`,
       })
@@ -494,8 +497,8 @@ function applyResponse(ctx: Ctx, me: User, event: GameEvent, input: ReturnType<t
         if (r.userId === me.id || (r.intent !== 'maybe' && r.intent !== 'interested')) continue
         notify(ctx, r.userId, {
           kind: 'event_short',
-          title: `「${event.title}」就差一个`,
-          body: `${slotTextFor(ctx, r.userId, slot)} · ${option.name}，方便就来，不方便当没看见就好`,
+          title: message("「{0}」就差一个", event.title),
+          body: message("{0} · {1}，方便就来，不方便当没看见就好", slotTextFor(ctx, r.userId, slot), message('$game', option.gameKey, option.name)),
           link: eventLink(event),
           dedupeKey: `short:${event.id}`,
         })
@@ -551,7 +554,7 @@ export function confirmEvent(ctx: Ctx, me: User, code: string, raw: unknown): vo
     const responses = ctx.store.listResponses(event.id)
     // 成团判断以后端规则引擎为准
     const combo = evaluateCombo(event, option, slot, responses)
-    if (!combo.feasible) throw badRequest(`还不能成团：${describeProgress(combo)}`, 'not_feasible')
+    if (!combo.feasible) throw badRequest(message('还不能成团：{0}', describeProgress(combo, ctx.locale)), 'not_feasible')
 
     const now = ctx.now().toISOString()
     event.status = 'confirmed'
@@ -573,8 +576,8 @@ export function confirmEvent(ctx: Ctx, me: User, code: string, raw: unknown): vo
       if (uid === me.id) continue
       notify(ctx, uid, {
         kind: 'event_confirmed',
-        title: `「${event.title}」成了！`,
-        body: `${slotTextFor(ctx, uid, slot)} · ${option.emoji} ${option.name}，点开说一声你会来`,
+        title: message("「{0}」成了！", event.title),
+        body: message("{0} · {1} {2}，点开说一声你会来", slotTextFor(ctx, uid, slot), option.emoji, message('$game', option.gameKey, option.name)),
         link: eventLink(event),
         dedupeKey: `confirmed:${event.id}`,
       })
@@ -582,8 +585,8 @@ export function confirmEvent(ctx: Ctx, me: User, code: string, raw: unknown): vo
     for (const uid of event.final.waitlistIds) {
       notify(ctx, uid, {
         kind: 'event_confirmed',
-        title: `「${event.title}」成了，你在候补`,
-        body: `${slotTextFor(ctx, uid, slot)}，有人鸽了会第一时间叫你`,
+        title: message("「{0}」成了，你在候补", event.title),
+        body: message("{0}，有人鸽了会第一时间叫你", slotTextFor(ctx, uid, slot)),
         link: eventLink(event),
         dedupeKey: `confirmed:${event.id}`,
       })
@@ -608,8 +611,8 @@ export function promoteWaitlist(ctx: Ctx, me: User, code: string, raw: unknown):
     const slot = slotOf(event, final.slotId)
     notify(ctx, userId, {
       kind: 'waitlist_promoted',
-      title: `「${event.title}」空出一个位置`,
-      body: `${slotTextFor(ctx, userId, slot)}，轮到你了！点开说一声你会来`,
+      title: message("「{0}」空出一个位置", event.title),
+      body: message("{0}，轮到你了！点开说一声你会来", slotTextFor(ctx, userId, slot)),
       link: eventLink(event),
       dedupeKey: `promoted:${event.id}:${userId}`,
     })
@@ -645,8 +648,8 @@ export function cancelEvent(ctx: Ctx, me: User, code: string, raw: unknown): voi
       if (r.userId === me.id || r.intent === 'declined') continue
       notify(ctx, r.userId, {
         kind: 'event_cancelled',
-        title: `「${event.title}」这局取消了`,
-        body: reason || '发起人取消了这次活动，下次再约',
+        title: message("「{0}」这局取消了", event.title),
+        body: reason || message("发起人取消了这次活动，下次再约"),
         link: eventLink(event),
         dedupeKey: `cancelled:${event.id}`,
       })
@@ -683,7 +686,7 @@ export function addSlots(ctx: Ctx, me: User, code: string, raw: unknown): void {
       existing.add(startUtc)
       event.slots.push({ id: `s${++n}`, startUtc, endUtc: s.endUtc ? new Date(s.endUtc).toISOString() : null })
     }
-    if (event.slots.length > MAX_SLOTS) throw badRequest(`最多 ${MAX_SLOTS} 个候选时间`)
+    if (event.slots.length > MAX_SLOTS) throw badRequest(message('最多 {0} 个候选时间', MAX_SLOTS))
     event.slots.sort((a, b) => a.startUtc.localeCompare(b.startUtc))
     if (event.status === 'expired') event.status = 'open'
     event.updatedAt = ctx.now().toISOString()
